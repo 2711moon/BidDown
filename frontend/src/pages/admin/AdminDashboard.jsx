@@ -17,6 +17,7 @@ const AdminDashboard = () => {
   const [openCardModal, setOpenCardModal] = useState(null);
   const [selectedReports, setSelectedReports] = useState([]);
   const [selectedVendorsForAction, setSelectedVendorsForAction] = useState([]);
+  const [selectedAuctionsForAction, setSelectedAuctionsForAction] = useState([]);
   const [reportFilters, setReportFilters] = useState({ year: 'All', quarter: 'All', month: 'All', vendor: 'All' });
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [viewDetails, setViewDetails] = useState(null);
@@ -305,16 +306,60 @@ const AdminDashboard = () => {
                 </button>
               </div>
               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-slate-900">{rooms.length} record{rooms.length!==1?'s':''}</span>
+                    {selectedAuctionsForAction.length > 0 && <button onClick={async()=>{
+                      if(window.confirm(`Delete ${selectedAuctionsForAction.length} auction(s)?`)) {
+                        const token = localStorage.getItem('adminToken');
+                        try {
+                          for (let id of selectedAuctionsForAction) await axios.delete('http://localhost:5000/api/admin/rooms/'+id, {headers:{Authorization:'Bearer '+token}});
+                          toast.success(selectedAuctionsForAction.length+' auction(s) deleted');
+                          setSelectedAuctionsForAction([]);
+                          fetchData();
+                        } catch(e) { toast.error('Failed to delete auctions'); }
+                      }
+                    }} className="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition">Delete ({selectedAuctionsForAction.length})</button>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">{selectedAuctionsForAction.length>0?'Export Selected:':'Export All:'}</span>
+                    <button onClick={()=>{
+                      const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
+                      const csv='data:text/csv;charset=utf-8,'+['ID,Product,Base Price,Start Time,Status'].concat(data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown',r.basePrice,new Date(r.startTime).toLocaleString(),r.status].join(','))).join('\n');
+                      const a=document.createElement('a');a.href=encodeURI(csv);a.download='auctions.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);
+                    }} className="text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-200 transition">CSV</button>
+                    <button onClick={async()=>{
+                      const XLSX = await import('xlsx');
+                      const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
+                      const ws = XLSX.utils.json_to_sheet(data.map(r=>({ID:r._id.slice(-6),Product:r.product?.name||'Unknown','Base Price':r.basePrice,'Start Time':new Date(r.startTime).toLocaleString(),Status:r.status})));
+                      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Auctions');
+                      XLSX.writeFile(wb,'auctions.xlsx');
+                    }} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-200 transition">Excel</button>
+                    <button onClick={async()=>{
+                      const { default: jsPDF } = await import('jspdf');
+                      const { default: autoTable } = await import('jspdf-autotable');
+                      const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
+                      const doc = new jsPDF();
+                      doc.setFontSize(14); doc.text('Auctions List', 14, 16);
+                      autoTable(doc, { startY:22, head:[['ID','Product','Base Price','Start Time','Status']], body:data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown','Rs.'+r.basePrice.toLocaleString(),new Date(r.startTime).toLocaleString(),r.status]), styles:{fontSize:8}, headStyles:{fillColor:[15,23,42]} });
+                      doc.save('auctions.pdf');
+                    }} className="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition">PDF</button>
+                  </div>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-slate-200">
-                      <tr><th className="px-5 py-3">ID</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Base Price</th><th className="px-5 py-3">Start Time</th><th className="px-5 py-3">Status</th></tr>
+                      <tr>
+                        <th className="px-4 py-3 w-10"><input type="checkbox" checked={rooms.length>0&&selectedAuctionsForAction.length===rooms.length} onChange={e=>setSelectedAuctionsForAction(e.target.checked?rooms.map(r=>r._id):[])} className="rounded" /></th>
+                        <th className="px-5 py-3">ID</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Base Price</th><th className="px-5 py-3">Start Time</th><th className="px-5 py-3">Status</th>
+                      </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {rooms.length === 0
-                        ? <tr><td colSpan="5" className="px-5 py-8 text-center text-slate-400">No auctions yet.</td></tr>
+                        ? <tr><td colSpan="6" className="px-5 py-8 text-center text-slate-400">No auctions yet.</td></tr>
                         : rooms.map(room => (
                           <tr key={room._id} onClick={() => navigate('/admin/room/' + room._id)} className="hover:bg-slate-50 transition-colors cursor-pointer">
+                            <td className="px-4 py-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedAuctionsForAction.includes(room._id)} onChange={e=>setSelectedAuctionsForAction(e.target.checked?[...selectedAuctionsForAction,room._id]:selectedAuctionsForAction.filter(id=>id!==room._id))} className="rounded" /></td>
                             <td className="px-5 py-4 font-mono text-slate-400 text-xs">{room._id.slice(-6)}</td>
                             <td className="px-5 py-4 font-semibold text-slate-900">{room.product?.name || 'Unknown'}</td>
                             <td className="px-5 py-4 text-slate-700">Rs.{room.basePrice.toLocaleString()}</td>
@@ -599,17 +644,16 @@ const AdminDashboard = () => {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-              <h3 className="font-black text-lg text-slate-900">Create New Vendor</h3>
+              <h3 className="font-black text-lg text-slate-900">{newVendor._id ? 'Edit Vendor' : 'Create New Vendor'}</h3>
               <button onClick={()=>setShowVendorModal(false)} className="text-slate-400 hover:text-slate-900 text-2xl leading-none font-bold">&times;</button>
             </div>
             <form onSubmit={handleCreateVendor} className="p-6 space-y-3">
               {[['Company Name','text','companyName'],['Contact Person','text','contactPerson'],['Email','email','email']].map(([label,type,field])=>(<div key={field}><label className="block text-sm font-bold text-slate-700 mb-1">{label}</label><input required type={type} value={newVendor[field]} onChange={e=>setNewVendor({...newVendor,[field]:e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" /></div>))}
               <div><label className="block text-sm font-bold text-slate-700 mb-1">Phone (10 digits)</label><input required type="tel" maxLength={10} pattern="[0-9]{10}" value={newVendor.phone} onInput={e=>{e.target.value=e.target.value.replace(/[^0-9]/g,'');setNewVendor({...newVendor,phone:e.target.value});}} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" /></div>
-              <div><label className="block text-sm font-bold text-slate-700 mb-1">Password (5-10 chars)</label><input required minLength={5} maxLength={10} type="password" value={newVendor.password} onChange={e=>setNewVendor({...newVendor,password:e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" placeholder="5-10 characters" /></div>
               <div><label className="block text-sm font-bold text-slate-700 mb-1">Upload Documents (PDF, Excel, Images)</label><input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e=>setVendorFiles(e.target.files)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm cursor-pointer" /></div>
               <div className="flex gap-3 pt-3 border-t border-slate-100">
                 <button type="button" onClick={()=>setShowVendorModal(false)} className="flex-1 py-2.5 bg-slate-100 text-slate-900 font-bold rounded-xl hover:bg-slate-200 transition text-sm">Cancel</button>
-                <button type="submit" className="flex-1 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition text-sm">Create Vendor</button>
+                <button type="submit" className="flex-1 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition text-sm">{newVendor._id ? 'Update Vendor' : 'Create Vendor'}</button>
               </div>
             </form>
           </div>
@@ -637,11 +681,11 @@ const AdminDashboard = () => {
       {openCardModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200">
-            <div className="p-5 border-b border-slate-200 flex justify-between items-center">
+            <div className="p-5 border-b border-slate-200 relative text-center">
               <h3 className="font-black text-slate-900">{openCardModal==='savings'?'Total Savings':openCardModal==='spend'?'Total Spend':openCardModal==='completed'?'Completed Auctions':'Vendor Statistics'}</h3>
-              <button onClick={()=>setOpenCardModal(null)} className="text-slate-400 hover:text-slate-900 text-2xl font-bold">&times;</button>
+              <button onClick={()=>setOpenCardModal(null)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 text-2xl font-bold leading-none">&times;</button>
             </div>
-            <div className="p-6 space-y-2">
+            <div className="p-6 space-y-2 text-center">
               {openCardModal==='savings'&&<><p className="text-4xl font-black text-emerald-600">Rs.{reports.totalSavings.toLocaleString()}</p><p className="text-sm text-slate-500">Total savings across all completed auctions.</p></>}
               {openCardModal==='spend'&&<><p className="text-4xl font-black text-blue-600">Rs.{reports.events.reduce((a,e)=>a+e.winningBid,0).toLocaleString()}</p><p className="text-sm text-slate-500">Total procurement spend.</p></>}
               {openCardModal==='completed'&&<><p className="text-4xl font-black text-purple-600">{reports.events.length}</p><p className="text-sm text-slate-500">Auctions successfully completed.</p></>}

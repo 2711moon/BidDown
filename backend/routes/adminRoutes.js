@@ -16,6 +16,7 @@ router.put('/vendors/:id/approve', ctrl.approveVendor);
 router.post('/rooms', upload.array('documents', 10), ctrl.createRoom);
 router.get('/rooms', ctrl.getRooms);
 router.get('/rooms/:id', ctrl.getRoomById);
+router.delete('/rooms/:id', ctrl.deleteRoom);
 
 router.post('/rooms/:id/end', async (req, res) => {
   try {
