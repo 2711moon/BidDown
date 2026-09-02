@@ -14,6 +14,7 @@ const BiddingRoom = () => {
   const [currentBid, setCurrentBid] = useState(null);
   const [bidInput, setBidInput] = useState('');
   const [autoBidFloor, setAutoBidFloor] = useState('');
+  const [activeAutoBidFloor, setActiveAutoBidFloor] = useState(null);
   const [timeLeft, setTimeLeft] = useState('');
   const [isEndingSoon, setIsEndingSoon] = useState(false);
 
@@ -22,7 +23,7 @@ const BiddingRoom = () => {
     
     const fetchRoom = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/vendor/rooms/${id}`);
+        const res = await axios.get(`http://172.16.100.174:5000/api/vendor/rooms/${id}`);
         const room = res.data;
         
         const now = new Date();
@@ -41,7 +42,7 @@ const BiddingRoom = () => {
 
     fetchRoom();
 
-    const newSocket = io('http://localhost:5000');
+    const newSocket = io('http://172.16.100.174:5000');
     setSocket(newSocket);
 
     const vendorId = localStorage.getItem('vendorId');
@@ -54,12 +55,19 @@ const BiddingRoom = () => {
 
     newSocket.on('newLowestBid', (data) => {
       setCurrentBid(data.amount);
-      toast.success(`New lowest bid: ₹${data.amount.toLocaleString()}`, {
-        icon: '📉',
+      toast.success(`New lowest bid: Rs.${data.amount.toLocaleString()}`, {
         style: { borderRadius: '10px', background: '#333', color: '#fff' }
       });
     });
 
+    newSocket.on('auctionState', (data) => {
+      if (data.myAutoBidFloor) setActiveAutoBidFloor(data.myAutoBidFloor);
+    });
+    newSocket.on('autoBidSuccess', (data) => {
+      setActiveAutoBidFloor(data.floorAmount);
+      toast.success('Auto-Bid active at Rs.' + data.floorAmount.toLocaleString());
+      setAutoBidFloor('');
+    });
     newSocket.on('bidError', (data) => {
       toast.error(data.message);
     });
@@ -98,6 +106,17 @@ const BiddingRoom = () => {
       clearInterval(interval);
     };
   }, [id]);
+
+  const handleAutoBid = () => {
+    if (!autoBidFloor || !socket) return;
+    const vendorId = localStorage.getItem('vendorId');
+    socket.emit('setupAutoBid', { roomId: id, vendorId, floorAmount: autoBidFloor });
+  };
+  
+  const handleCancelAutoBid = () => {
+    // We could add an event to cancel, but for now we can just set floor to something super high, or we can add logic to socket.
+    // For simplicity, let's just alert that it's set.
+  };
 
   const handleManualBid = (e) => {
     e.preventDefault();
@@ -241,12 +260,12 @@ const BiddingRoom = () => {
           <div className="p-12 text-center flex-1 flex flex-col justify-center border-b border-slate-100">
             <span className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Current Lowest Market Price</span>
             <div className="text-7xl font-black text-slate-900 tracking-tighter flex items-center justify-center">
-              <span className="text-4xl text-slate-400 mr-2">₹</span>
+              <span className="text-4xl text-slate-400 mr-2">Rs.</span>
               {currentBid ? currentBid.toLocaleString() : '---'}
             </div>
             <div className="mt-6 inline-flex items-center bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-medium">
               <TrendingDown className="w-4 h-4 mr-2" />
-              Minimum decrement step: ₹{roomState.decrementValue?.toLocaleString()}
+              Minimum decrement step: Rs.{roomState.decrementValue?.toLocaleString()}
             </div>
           </div>
 
@@ -259,7 +278,7 @@ const BiddingRoom = () => {
                 <h3 className="font-bold text-slate-800 mb-4">Place Manual Bid</h3>
                 <form onSubmit={handleManualBid} className="space-y-4">
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rs.</span>
                     <input 
                       type="number" 
                       value={bidInput}
@@ -285,8 +304,15 @@ const BiddingRoom = () => {
                 <h3 className="font-bold text-white mb-2 relative z-10">Smart Auto-Bid</h3>
                 <p className="text-xs text-slate-400 mb-4 relative z-10">Set your absolute floor price. The system will automatically counter-bid for you.</p>
                 <div className="space-y-4 relative z-10">
+                  {activeAutoBidFloor ? (
+                    <div className="bg-emerald-900/50 border border-emerald-500/30 p-4 rounded-lg text-center">
+                      <p className="text-emerald-400 font-bold text-sm mb-1">AUTO-BID ACTIVE</p>
+                      <p className="text-white text-2xl font-black mb-1">Rs.{activeAutoBidFloor.toLocaleString()}</p>
+                      <p className="text-xs text-emerald-200/70">System is bidding on your behalf down to this floor.</p>
+                    </div>
+                  ) : null}
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">₹</span>
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">Rs.</span>
                     <input 
                       type="number" 
                       value={autoBidFloor}
@@ -297,10 +323,11 @@ const BiddingRoom = () => {
                     />
                   </div>
                   <button 
-                    disabled={roomState.status === 'closed'}
+                    onClick={handleAutoBid}
+                    disabled={roomState.status === 'closed' || !autoBidFloor}
                     className="w-full bg-white text-slate-900 font-bold py-3 rounded-lg hover:bg-slate-100 transition active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
                   >
-                    Activate Auto-Bid
+                    {activeAutoBidFloor ? 'Update Auto-Bid' : 'Activate Auto-Bid'}
                   </button>
                 </div>
               </div>

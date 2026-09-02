@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
@@ -25,7 +25,7 @@ const AdminRoomView = () => {
     const fetchAndConnect = async () => {
       try {
         const token = localStorage.getItem('adminToken');
-        const res = await axios.get('http://localhost:5000/api/admin/rooms/' + id, {
+        const res = await axios.get('http://172.16.100.174:5000/api/admin/rooms/' + id, {
           headers: { Authorization: 'Bearer ' + token }
         });
         setRoom(res.data.room);
@@ -34,7 +34,7 @@ const AdminRoomView = () => {
         setLoading(false);
 
         // Connect socket as admin observer
-        const socket = io('http://localhost:5000');
+        const socket = io('http://172.16.100.174:5000');
         socketRef.current = socket;
 
         socket.on('connect', () => {
@@ -50,13 +50,13 @@ const AdminRoomView = () => {
         socket.on('adminNewBid', (bid) => {
           setBids(prev => [bid, ...prev]);
           setRoom(prev => prev ? { ...prev, currentLowestBid: bid.amount, winner: bid.vendor } : prev);
-          toast.success('New bid: Rs.' + bid.amount.toLocaleString() + ' by ' + bid.vendor.companyName, { icon: '📉' });
+          toast.success('New bid: Rs.' + bid.amount.toLocaleString() + ' by ' + bid.vendor.companyName, { icon: 'ðŸ“‰' });
         });
 
         socket.on('timeExtended', ({ newEndTime, message }) => {
           setEndTime(new Date(newEndTime));
           setRoom(prev => prev ? { ...prev, endTime: newEndTime } : prev);
-          toast(message, { icon: '⏱️', duration: 5000 });
+          toast(message, { icon: 'â±ï¸', duration: 5000 });
         });
 
         socket.on('auctionEnded', ({ message }) => {
@@ -94,7 +94,7 @@ const AdminRoomView = () => {
     setEnding(true);
     try {
       const token = localStorage.getItem('adminToken');
-      await axios.post('http://localhost:5000/api/admin/rooms/' + id + '/end', {}, {
+      await axios.post('http://172.16.100.174:5000/api/admin/rooms/' + id + '/end', {}, {
         headers: { Authorization: 'Bearer ' + token }
       });
       if (socketRef.current) socketRef.current.emit('adminEndAuction', { roomId: id });
@@ -126,7 +126,7 @@ const AdminRoomView = () => {
     doc.save('bid_history_' + id.slice(-6) + '.pdf');
   };
 
-  const fmt = (d) => d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—';
+  const fmt = (d) => d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'â€”';
   const money = (n) => 'Rs. ' + Number(n || 0).toLocaleString('en-IN');
 
   if (loading) return (
@@ -143,7 +143,7 @@ const AdminRoomView = () => {
       <div className="text-center">
         <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
         <p className="text-slate-700 font-bold">Room not found</p>
-        <button onClick={() => navigate('/admin')} className="mt-4 text-sm text-blue-600 hover:underline">← Back to Dashboard</button>
+        <button onClick={() => navigate('/admin')} className="mt-4 text-sm text-blue-600 hover:underline">â† Back to Dashboard</button>
       </div>
     </div>
   );
@@ -152,7 +152,7 @@ const AdminRoomView = () => {
   const isDone = room.status === 'completed';
   const savings = room.basePrice && room.currentLowestBid ? room.basePrice - room.currentLowestBid : 0;
   const savingsPct = room.basePrice ? ((savings / room.basePrice) * 100).toFixed(1) : 0;
-  const winnerName = room.winner?.companyName || (bids[0]?.vendor?.companyName) || '—';
+  const winnerName = room.winner?.companyName || (bids[0]?.vendor?.companyName) || 'â€”';
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -272,7 +272,7 @@ const AdminRoomView = () => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN — Live Bid Feed */}
+        {/* RIGHT COLUMN â€” Live Bid Feed */}
         <div className="lg:col-span-2">
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col" style={{ minHeight: '70vh' }}>
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
@@ -301,7 +301,7 @@ const AdminRoomView = () => {
                       className={'flex items-center px-6 py-4 transition-all ' + (isTop ? 'bg-emerald-50' : 'hover:bg-slate-50')}>
                       {/* Rank */}
                       <div className={'w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 mr-4 ' + (isTop ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400')}>
-                        {isTop ? '↓' : i + 1}
+                        {isTop ? 'â†“' : i + 1}
                       </div>
                       {/* Vendor */}
                       <div className="flex-1 min-w-0">

@@ -22,6 +22,10 @@ const bidRoomSchema = new mongoose.Schema({
     softCloseExecuted: { type: Boolean, default: false }
   },
   currentLowestBid: { type: Number },
+  autoBids: [{
+    vendor: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor' },
+    floorAmount: { type: Number }
+  }],
   winner: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor' },
   reminderSent: { type: Boolean, default: false },
   endEmailSent: { type: Boolean, default: false }

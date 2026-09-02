@@ -121,7 +121,11 @@ exports.getRooms = async (req, res) => {
 
 exports.createRoom = async (req, res) => {
   try {
-    const { product, basePrice, decrementValue, quantity, startTime, endTime, vendors: vendorIds } = req.body;
+    const { basePrice, decrementValue, quantity, startTime, endTime, vendors: vendorIds } = req.body;
+    let { product } = req.body;
+    if (typeof product === 'string') {
+      product = JSON.parse(product);
+    }
 
     const productDoc = new (require('../models/Product'))({ name: product.name, documentUrl: product.documentUrl || '' });
     const savedProduct = await productDoc.save();

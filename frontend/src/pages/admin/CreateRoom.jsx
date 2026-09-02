@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
@@ -16,7 +16,7 @@ const CreateRoom = () => {
   useEffect(() => {
     const fetchVendors = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/admin/vendors');
+        const res = await axios.get('http://172.16.100.174:5000/api/admin/vendors');
         setVendors(res.data.filter(v => v.status === 'approved'));
       } catch (err) {
         toast.error('Failed to load vendors');
@@ -41,13 +41,13 @@ const CreateRoom = () => {
     setLoading(true);
     const loadingToast = toast.loading('Scheduling auction room...');
     try {
-      const productRes = await axios.post('http://localhost:5000/api/admin/products', {
+      const productRes = await axios.post('http://172.16.100.174:5000/api/admin/products', {
         name: formData.productName, 
         description: formData.description, 
         documentUrl: formData.documentUrl,
         billingParameters: { paymentTerms: 'Net 30' }
       });
-      await axios.post('http://localhost:5000/api/admin/rooms', {
+      await axios.post('http://172.16.100.174:5000/api/admin/rooms', {
         product: productRes.data._id,
         basePrice: Number(formData.basePrice), decrementValue: Number(formData.decrementValue),
         quantity: Number(formData.quantity), startTime: new Date(formData.startTime), endTime: new Date(formData.endTime),
@@ -101,11 +101,11 @@ const CreateRoom = () => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Base Price (₹)</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Base Price (â‚¹)</label>
                 <input type="number" name="basePrice" value={formData.basePrice} onChange={handleChange} required className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono" />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Decrement Step (₹)</label>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Decrement Step (â‚¹)</label>
                 <input type="number" name="decrementValue" value={formData.decrementValue} onChange={handleChange} required className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-mono" />
               </div>
               <div>

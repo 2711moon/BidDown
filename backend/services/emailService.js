@@ -11,7 +11,8 @@ const transporter = nodemailer.createTransport({
 
 const send = async (to, subject, html) => {
   try {
-    await transporter.sendMail({ from: '"BID ON" <' + process.env.EMAIL_USER + '>', to, subject, html });
+    const fromAddr = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+    await transporter.sendMail({ from: '"BID ON" <' + fromAddr + '>', to, subject, html });
     console.log('[Email] Sent to ' + to + ': ' + subject);
   } catch (err) {
     console.error('[Email] Failed to ' + to + ':', err.message);

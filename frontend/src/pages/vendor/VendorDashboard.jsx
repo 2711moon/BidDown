@@ -18,7 +18,7 @@ const VendorDashboard = () => {
       }
       
       try {
-        const res = await axios.get(`http://localhost:5000/api/vendor/dashboard?vendorId=${vendorId}`);
+        const res = await axios.get(`http://172.16.100.174:5000/api/vendor/dashboard?vendorId=${vendorId}`);
         setRooms(res.data);
       } catch (err) {
         toast.error('Failed to load your dashboard');
@@ -69,14 +69,19 @@ const VendorDashboard = () => {
             {rooms.map(room => {
               const start = new Date(room.startTime);
               const isFuture = start > new Date();
+              const isCompleted = room.status === 'completed';
               
               return (
                 <div key={room._id} className="bg-white dark:bg-zinc-900 rounded-3xl shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 dark:border-zinc-800 overflow-hidden flex flex-col group">
-                  <div className={`h-2 w-full ${isFuture ? 'bg-amber-400' : 'bg-emerald-500'}`}></div>
+                  <div className={`h-2 w-full ${isCompleted ? 'bg-slate-400' : isFuture ? 'bg-amber-400' : 'bg-emerald-500'}`}></div>
                   <div className="p-8 flex-1 flex flex-col">
                     <div className="flex justify-between items-start mb-6">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${isFuture ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>
-                        {isFuture ? 'Upcoming' : room.status}
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                        isCompleted ? 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' :
+                        isFuture ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                        'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                      }`}>
+                        {isCompleted ? 'Completed' : isFuture ? 'Upcoming' : 'Active'}
                       </span>
                       <span className="text-xs font-mono font-bold text-slate-400 dark:text-zinc-500">#{room._id.slice(-6)}</span>
                     </div>
@@ -88,7 +93,7 @@ const VendorDashboard = () => {
                     <div className="mt-4 space-y-3 mb-8">
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-500 dark:text-zinc-400">Opening Price</span>
-                        <span className="font-bold text-slate-700 dark:text-zinc-300">₹{room.basePrice.toLocaleString()}</span>
+                        <span className="font-bold text-slate-700 dark:text-zinc-300">Rs.{room.basePrice.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-500 dark:text-zinc-400">Scheduled Time</span>
@@ -99,10 +104,15 @@ const VendorDashboard = () => {
                     </div>
                     
                     <button 
-                      onClick={() => navigate(`/room/${room._id}`)}
-                      className="mt-auto w-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-500 dark:hover:text-white border border-indigo-100 dark:border-indigo-900/50 py-3 rounded-xl font-bold transition flex items-center justify-center group-hover:shadow-lg shadow-indigo-200"
+                      onClick={() => !isCompleted && navigate(`/room/${room._id}`)}
+                      disabled={isCompleted}
+                      className={`mt-auto w-full py-3 rounded-xl font-bold transition flex items-center justify-center ${
+                        isCompleted
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 dark:bg-zinc-800 dark:text-zinc-600 dark:border-zinc-700'
+                          : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-500 dark:hover:text-white border border-indigo-100 dark:border-indigo-900/50 group-hover:shadow-lg shadow-indigo-200'
+                      }`}
                     >
-                      {isFuture ? 'Enter Waiting Room' : 'Join Live Auction'} <ArrowRight className="w-4 h-4 ml-2" />
+                      {isCompleted ? 'Auction Ended' : isFuture ? 'Enter Waiting Room' : 'Join Live Auction'} {!isCompleted && <ArrowRight className="w-4 h-4 ml-2" />}
                     </button>
                   </div>
                 </div>

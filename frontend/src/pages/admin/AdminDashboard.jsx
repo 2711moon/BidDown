@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -41,10 +41,10 @@ const AdminDashboard = () => {
       
       const token = localStorage.getItem('adminToken');
       if (newVendor._id) {
-        await axios.put(`http://localhost:5000/api/admin/vendors/${newVendor._id}`, formData, { headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` } });
+        await axios.put(`http://172.16.100.174:5000/api/admin/vendors/${newVendor._id}`, formData, { headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` } });
         toast.success('Vendor updated successfully');
       } else {
-        await axios.post('http://localhost:5000/api/admin/vendors', formData, { headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` } });
+        await axios.post('http://172.16.100.174:5000/api/admin/vendors', formData, { headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${token}` } });
         toast.success('Vendor created successfully');
       }
       
@@ -61,7 +61,7 @@ const AdminDashboard = () => {
     if (passwordData.newPassword.length < 5 || passwordData.newPassword.length > 10) return toast.error('Password must be 5-10 characters');
     try {
       const token = localStorage.getItem('adminToken');
-      const res = await axios.post('http://localhost:5000/api/admin/change-password',
+      const res = await axios.post('http://172.16.100.174:5000/api/admin/change-password',
         { currentPassword: passwordData.currentPassword, newPassword: passwordData.newPassword },
         { headers: { Authorization: 'Bearer ' + token } }
       );
@@ -83,7 +83,7 @@ const AdminDashboard = () => {
       formData.append('endTime', newAuction.endTime);
       formData.append('vendors', JSON.stringify(newAuction.selectedVendors));
       if (auctionFiles) for (let i = 0; i < auctionFiles.length; i++) formData.append('documents', auctionFiles[i]);
-      await axios.post('http://localhost:5000/api/admin/rooms', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await axios.post('http://172.16.100.174:5000/api/admin/rooms', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Auction created! Invitation emails sent to vendors.');
       setActiveTab('rooms');
       setNewAuction({ productName: '', basePrice: '', decrementValue: '', quantity: '1', startTime: '', endTime: '', selectedVendors: [] });
@@ -96,9 +96,9 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     try {
       const [vRes, rRes, roomRes] = await Promise.all([
-        axios.get('http://localhost:5000/api/admin/vendors'),
-        axios.get('http://localhost:5000/api/admin/reports'),
-        axios.get('http://localhost:5000/api/admin/rooms'),
+        axios.get('http://172.16.100.174:5000/api/admin/vendors'),
+        axios.get('http://172.16.100.174:5000/api/admin/reports'),
+        axios.get('http://172.16.100.174:5000/api/admin/rooms'),
       ]);
       setVendors(vRes.data); setReports(rRes.data); setRooms(roomRes.data);
     } catch { toast.error('Failed to load dashboard data'); }
@@ -108,7 +108,7 @@ const AdminDashboard = () => {
 
   const handleApprove = async (id) => {
     try {
-      await axios.put('http://localhost:5000/api/admin/vendors/' + id + '/approve');
+      await axios.put('http://172.16.100.174:5000/api/admin/vendors/' + id + '/approve');
       toast.success('Vendor approved'); fetchData();
     } catch { toast.error('Error approving vendor'); }
   };
@@ -242,7 +242,7 @@ const AdminDashboard = () => {
       <main className="flex-1 overflow-y-auto md:pt-0 pt-14">
         <div className="max-w-6xl mx-auto p-6 md:p-8 pb-20">
 
-          {/* ── DASHBOARD ── */}
+          {/* â”€â”€ DASHBOARD â”€â”€ */}
           {activeTab === 'dashboard' && (
             <div>
               <div className="mb-8">
@@ -281,7 +281,7 @@ const AdminDashboard = () => {
                             <td className="px-5 py-4 font-mono text-slate-400 text-xs">{room._id.slice(-6)}</td>
                             <td className="px-5 py-4 font-semibold text-slate-900">{room.product?.name || 'Unknown'}</td>
                             <td className="px-5 py-4 text-slate-700">Rs.{room.basePrice.toLocaleString()}</td>
-                            <td className="px-5 py-4 text-slate-500">{new Date(room.startTime).toLocaleString()}</td>
+                            <td className="px-5 py-4 text-slate-500">{new Date(room.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()}</td>
                             <td className="px-5 py-4">{statusBadge(room.status)}</td>
                           </tr>
                         ))
@@ -293,7 +293,7 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          {/* ── AUCTIONS ── */}
+          {/* â”€â”€ AUCTIONS â”€â”€ */}
           {activeTab === 'rooms' && (
             <div>
               <div className="flex items-center justify-between mb-8">
@@ -313,7 +313,7 @@ const AdminDashboard = () => {
                       if(window.confirm(`Delete ${selectedAuctionsForAction.length} auction(s)?`)) {
                         const token = localStorage.getItem('adminToken');
                         try {
-                          for (let id of selectedAuctionsForAction) await axios.delete('http://localhost:5000/api/admin/rooms/'+id, {headers:{Authorization:'Bearer '+token}});
+                          for (let id of selectedAuctionsForAction) await axios.delete('http://172.16.100.174:5000/api/admin/rooms/'+id, {headers:{Authorization:'Bearer '+token}});
                           toast.success(selectedAuctionsForAction.length+' auction(s) deleted');
                           setSelectedAuctionsForAction([]);
                           fetchData();
@@ -325,13 +325,13 @@ const AdminDashboard = () => {
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">{selectedAuctionsForAction.length>0?'Export Selected:':'Export All:'}</span>
                     <button onClick={()=>{
                       const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
-                      const csv='data:text/csv;charset=utf-8,'+['ID,Product,Base Price,Start Time,Status'].concat(data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown',r.basePrice,new Date(r.startTime).toLocaleString(),r.status].join(','))).join('\n');
+                      const csv='data:text/csv;charset=utf-8,'+['ID,Product,Base Price,Start Time,Status'].concat(data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown',r.basePrice,new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),r.status].join(','))).join('\n');
                       const a=document.createElement('a');a.href=encodeURI(csv);a.download='auctions.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);
                     }} className="text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-200 transition">CSV</button>
                     <button onClick={async()=>{
                       const XLSX = await import('xlsx');
                       const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
-                      const ws = XLSX.utils.json_to_sheet(data.map(r=>({ID:r._id.slice(-6),Product:r.product?.name||'Unknown','Base Price':r.basePrice,'Start Time':new Date(r.startTime).toLocaleString(),Status:r.status})));
+                      const ws = XLSX.utils.json_to_sheet(data.map(r=>({ID:r._id.slice(-6),Product:r.product?.name||'Unknown','Base Price':r.basePrice,'Start Time':new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),Status:r.status})));
                       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Auctions');
                       XLSX.writeFile(wb,'auctions.xlsx');
                     }} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-200 transition">Excel</button>
@@ -341,7 +341,7 @@ const AdminDashboard = () => {
                       const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
                       const doc = new jsPDF();
                       doc.setFontSize(14); doc.text('Auctions List', 14, 16);
-                      autoTable(doc, { startY:22, head:[['ID','Product','Base Price','Start Time','Status']], body:data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown','Rs.'+r.basePrice.toLocaleString(),new Date(r.startTime).toLocaleString(),r.status]), styles:{fontSize:8}, headStyles:{fillColor:[15,23,42]} });
+                      autoTable(doc, { startY:22, head:[['ID','Product','Base Price','Start Time','Status']], body:data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown','Rs.'+r.basePrice.toLocaleString(),new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),r.status]), styles:{fontSize:8}, headStyles:{fillColor:[15,23,42]} });
                       doc.save('auctions.pdf');
                     }} className="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition">PDF</button>
                   </div>
@@ -363,7 +363,7 @@ const AdminDashboard = () => {
                             <td className="px-5 py-4 font-mono text-slate-400 text-xs">{room._id.slice(-6)}</td>
                             <td className="px-5 py-4 font-semibold text-slate-900">{room.product?.name || 'Unknown'}</td>
                             <td className="px-5 py-4 text-slate-700">Rs.{room.basePrice.toLocaleString()}</td>
-                            <td className="px-5 py-4 text-slate-500">{new Date(room.startTime).toLocaleString()}</td>
+                            <td className="px-5 py-4 text-slate-500">{new Date(room.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()}</td>
                             <td className="px-5 py-4">{statusBadge(room.status)}</td>
                           </tr>
                         ))
@@ -375,7 +375,7 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          {/* ── VENDORS ── */}
+          {/* â”€â”€ VENDORS â”€â”€ */}
           {activeTab === 'vendors' && (
             <div>
               <div className="flex items-center justify-between mb-8">
@@ -395,7 +395,7 @@ const AdminDashboard = () => {
                       if(window.confirm(`Delete ${selectedVendorsForAction.length} vendor(s)?`)) {
                         const token = localStorage.getItem('adminToken');
                         try {
-                          for (let id of selectedVendorsForAction) await axios.delete('http://localhost:5000/api/admin/vendors/'+id, {headers:{Authorization:'Bearer '+token}});
+                          for (let id of selectedVendorsForAction) await axios.delete('http://172.16.100.174:5000/api/admin/vendors/'+id, {headers:{Authorization:'Bearer '+token}});
                           toast.success(selectedVendorsForAction.length+' vendor(s) deleted');
                           setSelectedVendorsForAction([]);
                           fetchData();
@@ -466,7 +466,7 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          {/* ── CREATE AUCTION ── */}
+          {/* â”€â”€ CREATE AUCTION â”€â”€ */}
           {activeTab === 'create-auction' && (
             <div className="max-w-2xl mx-auto">
               <div className="flex items-center gap-3 mb-8">
@@ -528,7 +528,7 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          {/* ── FINANCIAL REPORTS ── */}
+          {/* â”€â”€ FINANCIAL REPORTS â”€â”€ */}
           {activeTab === 'reports' && (
             <div>
               <div className="mb-8">
@@ -614,7 +614,7 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          {/* ── CHANGE PASSWORD ── */}
+          {/* â”€â”€ CHANGE PASSWORD â”€â”€ */}
           {activeTab === 'change-password' && (
             <div className="max-w-md mx-auto">
               <h2 className="text-2xl font-black text-slate-900 mb-8 flex items-center gap-3"><Lock className="w-6 h-6 text-blue-600" /> Change Password</h2>
@@ -639,7 +639,7 @@ const AdminDashboard = () => {
         </div>
       </main>
 
-      {/* ── VENDOR CREATION MODAL ── */}
+      {/* â”€â”€ VENDOR CREATION MODAL â”€â”€ */}
       {showVendorModal && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
@@ -660,7 +660,7 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* ── VIEW DETAILS MODAL ── */}
+      {/* â”€â”€ VIEW DETAILS MODAL â”€â”€ */}
       {viewDetails && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
@@ -670,14 +670,14 @@ const AdminDashboard = () => {
             </div>
             <div className="p-6 overflow-y-auto flex-1 space-y-4">
               {viewDetails.type==='vendor'&&(<div className="grid grid-cols-2 gap-4">{[['Company',viewDetails.data.companyName],['Contact',viewDetails.data.contactPerson],['Email',viewDetails.data.email],['Phone',viewDetails.data.phone],['Status',viewDetails.data.status]].map(([l,v])=>(<div key={l}><p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">{l}</p><p className="text-sm font-semibold text-slate-900">{v}</p></div>))}{viewDetails.data.documents&&viewDetails.data.documents.length>0&&<div className="col-span-2"><p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Documents</p><div className="space-y-1">{viewDetails.data.documents.map((doc,i)=>(<a key={i} href={doc.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 text-sm text-blue-600 hover:underline truncate">{doc.name}</a>))}</div></div>}</div>)}
-              {viewDetails.type==='auction'&&(<div className="grid grid-cols-2 gap-4">{[['Product',viewDetails.data.product?.name||'Unknown'],['Base Price','Rs.'+viewDetails.data.basePrice?.toLocaleString()],['Start',new Date(viewDetails.data.startTime).toLocaleString()],['End',new Date(viewDetails.data.endTime).toLocaleString()],['Status',viewDetails.data.status],['Winner',viewDetails.data.winner?.companyName||'No Winner'],['Winning Bid','Rs.'+(viewDetails.data.currentLowestBid||viewDetails.data.basePrice)?.toLocaleString()]].map(([l,v])=>(<div key={l}><p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">{l}</p><p className="text-sm font-semibold text-slate-900">{v}</p></div>))}</div>)}
+              {viewDetails.type==='auction'&&(<div className="grid grid-cols-2 gap-4">{[['Product',viewDetails.data.product?.name||'Unknown'],['Base Price','Rs.'+viewDetails.data.basePrice?.toLocaleString()],['Start',new Date(viewDetails.data.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()],['End',new Date(viewDetails.data.endTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()],['Status',viewDetails.data.status],['Winner',viewDetails.data.winner?.companyName||'No Winner'],['Winning Bid','Rs.'+(viewDetails.data.currentLowestBid||viewDetails.data.basePrice)?.toLocaleString()]].map(([l,v])=>(<div key={l}><p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">{l}</p><p className="text-sm font-semibold text-slate-900">{v}</p></div>))}</div>)}
             </div>
             <div className="p-6 border-t border-slate-200 shrink-0"><button onClick={()=>setViewDetails(null)} className="w-full py-3 bg-slate-100 text-slate-900 font-bold rounded-xl hover:bg-slate-200 transition">Close</button></div>
           </div>
         </div>
       )}
 
-      {/* ── CARD DETAIL MODAL ── */}
+      {/* â”€â”€ CARD DETAIL MODAL â”€â”€ */}
       {openCardModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200">
@@ -700,3 +700,4 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+
