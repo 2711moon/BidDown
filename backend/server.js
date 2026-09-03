@@ -32,12 +32,24 @@ require('./services/socketService')(io);
 setInterval(async () => {
   try {
     const now = new Date();
-    await BidRoom.updateMany({ status: 'scheduled', startTime: { $lte: now } }, { $set: { status: 'active' } });
+
+    // Find scheduled rooms that should now be active (before updating)
+    const toActivate = await BidRoom.find({ status: 'scheduled', startTime: { $lte: now } });
+    for (const room of toActivate) {
+      await BidRoom.findByIdAndUpdate(room._id, { status: 'active' });
+      // Notify all vendors in this room to transition from waiting room to live auction
+      io.to(room._id.toString()).emit('auctionStarted', {
+        currentLowestBid: room.currentLowestBid || room.basePrice,
+        endTime: room.endTime,
+        status: 'active'
+      });
+    }
 
     // Mark completed and send end emails
     const toComplete = await BidRoom.find({ status: 'active', endTime: { $lte: now }, endEmailSent: { $ne: true } }).populate('product').populate('winner', 'companyName email contactPerson phone');
     for (const room of toComplete) {
       await BidRoom.findByIdAndUpdate(room._id, { status: 'completed', endEmailSent: true });
+      io.to(room._id.toString()).emit('auctionEnded', { message: 'Auction has ended.' });
       const productName = room.product ? room.product.name : 'Unknown Product';
       for (const code of room.vendorAccessCodes) {
         const vendor = await Vendor.findById(code.vendor).select('-password');

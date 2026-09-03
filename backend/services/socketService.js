@@ -259,6 +259,21 @@ module.exports = function(io) {
       }
     });
 
+    // ── Admin: Manual Time Extension ───────────────────────────────────────
+    socket.on('adminManualExtend', async ({ roomId, minutes }) => {
+      try {
+        const room = await BidRoom.findById(roomId);
+        if (!room || room.status !== 'active') return;
+        const addMs = Number(minutes) * 60 * 1000;
+        room.endTime = new Date(new Date(room.endTime).getTime() + addMs);
+        room.settings.softCloseExecuted = false; // reset so soft-close can fire again if needed
+        await room.save();
+        const message = 'The administrator has extended the auction by ' + minutes + ' minute' + (minutes > 1 ? 's' : '') + '. New end time: ' + new Date(room.endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+        io.to(roomId).emit('timeExtended', { newEndTime: room.endTime, message });
+        console.log('Admin extended room ' + roomId + ' by ' + minutes + ' minutes');
+      } catch (err) { console.error('adminManualExtend error:', err); }
+    });
+
     // ── Admin: Manual End Auction ──────────────────────────────────────────
     socket.on('adminEndAuction', async ({ roomId }) => {
       try {

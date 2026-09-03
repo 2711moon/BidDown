@@ -127,15 +127,27 @@ exports.createRoom = async (req, res) => {
       product = JSON.parse(product);
     }
 
-    const productDoc = new (require('../models/Product'))({ name: product.name, documentUrl: product.documentUrl || '' });
-    const savedProduct = await productDoc.save();
+    // Handle product image (separate from documents)
+    let imageUrl = '';
+    if (req.files && req.files.productImage && req.files.productImage.length > 0) {
+      imageUrl = req.files.productImage[0].path; // Cloudinary URL
+    }
 
+    // Handle product documents
     const documents = [];
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
+    if (req.files && req.files.documents && req.files.documents.length > 0) {
+      for (const file of req.files.documents) {
         documents.push({ name: file.originalname, url: file.path, type: file.mimetype });
       }
     }
+
+    const productDoc = new (require('../models/Product'))({
+      name: product.name,
+      description: product.description || '',
+      imageUrl,
+      documents
+    });
+    const savedProduct = await productDoc.save();
 
     const vendorList = Array.isArray(vendorIds) ? vendorIds : (typeof vendorIds === 'string' ? JSON.parse(vendorIds) : []);
 
@@ -162,14 +174,10 @@ exports.createRoom = async (req, res) => {
     // Send invitation emails
     const loginUrl = (process.env.FRONTEND_URL || 'http://localhost:5173') + '/vendor/login';
     const productName = product.name;
-    const now = new Date();
-    const start = new Date(startTime);
-    const minutesToStart = (start - now) / 60000;
 
     for (const code of vendorAccessCodes) {
       const vendor = await Vendor.findById(code.vendor).select('-password');
       if (!vendor) continue;
-      // If creation is within 5 min of start, send only one email; otherwise send invite
       await emailService.sendAuctionInvite({ vendor, room, product: productName, accessPassword: code.plainPassword, loginUrl });
     }
 
@@ -243,3 +251,81 @@ exports.getReports = async (req, res) => {
     res.json({ totalSavings, events });
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
+
+exports.reopenRoom = async (req, res) => {
+  try {
+    const { durationMinutes, retainedVendorIds, newVendorIds } = req.body;
+    // retainedVendorIds: vendors from the original auction to keep
+    // newVendorIds: brand new vendors to add
+
+    const room = await BidRoom.findById(req.params.id).populate('product');
+    if (!room) return res.status(404).json({ message: 'Room not found' });
+
+    const loginUrl = (process.env.FRONTEND_URL || 'http://localhost:5173') + '/vendor/login';
+    const productName = room.product ? room.product.name : 'Unknown Product';
+    const newEndTime = new Date(Date.now() + Number(durationMinutes) * 60 * 1000);
+    const newStartTime = new Date(Date.now() + 2 * 60 * 1000); // starts in 2 minutes
+
+    // Reset auction state
+    room.status = 'scheduled';
+    room.startTime = newStartTime;
+    room.endTime = newEndTime;
+    room.winner = null;
+    room.currentLowestBid = null;
+    room.settings.softCloseExecuted = false;
+    room.reminderSent = false;
+    room.endEmailSent = false;
+
+    const retained = Array.isArray(retainedVendorIds) ? retainedVendorIds : [];
+    const newVendors = Array.isArray(newVendorIds) ? newVendorIds : [];
+
+    // Remove vendors not being retained
+    room.vendorAccessCodes = room.vendorAccessCodes.filter(ac =>
+      retained.includes(ac.vendor.toString())
+    );
+    room.invitedVendors = [
+      ...retained,
+      ...newVendors
+    ];
+
+    // Generate new access codes for new vendors
+    for (const vid of newVendors) {
+      const plain = genPassword();
+      const hashed = await bcrypt.hash(plain, 10);
+      room.vendorAccessCodes.push({ vendor: vid, hashedPassword: hashed, plainPassword: plain });
+    }
+
+    await room.save();
+
+    // Email retained vendors — same credentials, auction re-opened
+    for (const ac of room.vendorAccessCodes) {
+      if (!retained.includes(ac.vendor.toString())) continue;
+      const vendor = await Vendor.findById(ac.vendor).select('-password');
+      if (!vendor) continue;
+      await emailService.sendAuctionReopened({
+        vendor, room, product: productName,
+        accessPassword: ac.plainPassword,
+        loginUrl, isExisting: true
+      });
+    }
+
+    // Email new vendors — fresh invite
+    for (const vid of newVendors) {
+      const ac = room.vendorAccessCodes.find(a => a.vendor.toString() === vid.toString());
+      if (!ac) continue;
+      const vendor = await Vendor.findById(vid).select('-password');
+      if (!vendor) continue;
+      await emailService.sendAuctionReopened({
+        vendor, room, product: productName,
+        accessPassword: ac.plainPassword,
+        loginUrl, isExisting: false
+      });
+    }
+
+    res.json({ message: 'Auction re-opened successfully', room });
+  } catch (error) {
+    console.error('reopenRoom error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+

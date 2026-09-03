@@ -1,11 +1,11 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import {
   ChevronLeft, Activity, Clock, TrendingDown, Users, Package,
-  AlertCircle, CheckCircle, Download, StopCircle, Crown
+  AlertCircle, CheckCircle, Download, StopCircle, Crown, RefreshCw, Timer, X
 } from 'lucide-react';
 
 const AdminRoomView = () => {
@@ -18,6 +18,13 @@ const AdminRoomView = () => {
   const [loading, setLoading] = useState(true);
   const [ending, setEnding] = useState(false);
   const [endTime, setEndTime] = useState(null);
+  const [extendMinutes, setExtendMinutes] = useState('5');
+  const [extendLoading, setExtendLoading] = useState(false);
+  const [showReopenModal, setShowReopenModal] = useState(false);
+  const [reopenDuration, setReopenDuration] = useState('30');
+  const [reopenVendors, setReopenVendors] = useState([]);
+  const [allVendors, setAllVendors] = useState([]);
+  const [reopenLoading, setReopenLoading] = useState(false);
   const socketRef = useRef(null);
   const bidFeedRef = useRef(null);
 
@@ -105,6 +112,56 @@ const AdminRoomView = () => {
     } finally { setEnding(false); }
   };
 
+  const handleExtend = () => {
+    const mins = Number(extendMinutes);
+    if (!mins || mins <= 0) { toast.error('Enter a valid duration'); return; }
+    if (!socketRef.current) return;
+    socketRef.current.emit('adminManualExtend', { roomId: id, minutes: mins });
+    toast.success('Extending auction by ' + mins + ' minutes...');
+  };
+
+  const openReopenModal = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const res = await axios.get('http://172.16.100.174:5000/api/admin/vendors', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      setAllVendors(res.data);
+      const existingIds = (room.invitedVendors || []).map(v => (v._id || v).toString());
+      setReopenVendors(existingIds);
+      setShowReopenModal(true);
+    } catch (err) { toast.error('Failed to load vendors'); }
+  };
+
+  const handleReopen = async () => {
+    if (!reopenDuration || Number(reopenDuration) <= 0) { toast.error('Enter a valid duration'); return; }
+    setReopenLoading(true);
+    try {
+      const token = localStorage.getItem('adminToken');
+      const existingIds = (room.invitedVendors || []).map(v => (v._id || v).toString());
+      const retainedVendorIds = reopenVendors.filter(vid => existingIds.includes(vid.toString()));
+      const newVendorIds = reopenVendors.filter(vid => !existingIds.includes(vid.toString()));
+      await axios.post('http://172.16.100.174:5000/api/admin/rooms/' + id + '/reopen',
+        { durationMinutes: Number(reopenDuration), retainedVendorIds, newVendorIds },
+        { headers: { Authorization: 'Bearer ' + token } }
+      );
+      toast.success('Auction re-opened! Emails sent to all vendors.');
+      setShowReopenModal(false);
+      const res2 = await axios.get('http://172.16.100.174:5000/api/admin/rooms/' + id, {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      setRoom(res2.data.room);
+      setBids(res2.data.bids || []);
+      setEndTime(new Date(res2.data.room.endTime));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to re-open auction');
+    } finally { setReopenLoading(false); }
+  };
+
+  const toggleReopenVendor = (vendorId) => {
+    setReopenVendors(prev => prev.includes(vendorId) ? prev.filter(v => v !== vendorId) : [...prev, vendorId]);
+  };
+
   const exportCSV = () => {
     const rows = [['#', 'Time', 'Vendor', 'Email', 'Bid Amount (Rs.)', 'Savings from Base (Rs.)'], ...bids.map((b, i) => [i + 1, new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), b.vendor.companyName, b.vendor.email || '', b.amount, room ? (room.basePrice - b.amount) : ''])];
     const csv = 'data:text/csv;charset=utf-8,' + rows.map(r => r.join(',')).join('\n');
@@ -187,9 +244,32 @@ const AdminRoomView = () => {
             <button onClick={exportPDF} className="text-xs font-bold text-slate-600 hover:text-red-700 bg-white hover:bg-red-50 px-3 py-1.5 rounded transition shadow-sm">PDF</button>
           </div>
           {isLive && (
-            <button onClick={handleEndAuction} disabled={ending}
-              className="flex items-center gap-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition disabled:opacity-60">
-              <StopCircle className="w-3.5 h-3.5" /> {ending ? 'Ending...' : 'End Auction'}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
+                <Timer className="w-3.5 h-3.5 text-amber-600" />
+                <span className="text-xs font-bold text-amber-700">Extend:</span>
+                <select
+                  value={extendMinutes}
+                  onChange={e => setExtendMinutes(e.target.value)}
+                  className="text-xs font-bold text-amber-700 bg-transparent outline-none cursor-pointer"
+                >
+                  {[5,10,15,20,30,45,60].map(m => <option key={m} value={m}>{m} min</option>)}
+                </select>
+                <button onClick={handleExtend} disabled={extendLoading}
+                  className="text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-2 py-1 rounded transition disabled:opacity-60">
+                  + Add
+                </button>
+              </div>
+              <button onClick={handleEndAuction} disabled={ending}
+                className="flex items-center gap-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition disabled:opacity-60">
+                <StopCircle className="w-3.5 h-3.5" /> {ending ? 'Ending...' : 'End Auction'}
+              </button>
+            </div>
+          )}
+          {isDone && (
+            <button onClick={openReopenModal}
+              className="flex items-center gap-2 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 px-3 py-1.5 rounded-lg transition">
+              <RefreshCw className="w-3.5 h-3.5" /> Re-open Auction
             </button>
           )}
         </div>
@@ -224,6 +304,13 @@ const AdminRoomView = () => {
               </div>
             )}
           </div>
+
+          {/* Product Image */}
+          {room.product?.imageUrl && (
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <img src={room.product.imageUrl} alt={room.product?.name} className="w-full object-cover max-h-52" />
+            </div>
+          )}
 
           {/* Auction details */}
           <div className="bg-white border border-slate-200 rounded-xl p-5">
@@ -301,7 +388,7 @@ const AdminRoomView = () => {
                       className={'flex items-center px-6 py-4 transition-all ' + (isTop ? 'bg-emerald-50' : 'hover:bg-slate-50')}>
                       {/* Rank */}
                       <div className={'w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 mr-4 ' + (isTop ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400')}>
-                        {isTop ? 'â†“' : i + 1}
+                        {i + 1}
                       </div>
                       {/* Vendor */}
                       <div className="flex-1 min-w-0">
@@ -323,6 +410,82 @@ const AdminRoomView = () => {
 
       </div>
     </div>
+
+      {/* Re-open Auction Modal */}
+      {showReopenModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Re-open Auction</h2>
+                <p className="text-sm text-slate-400 mt-0.5">Configure and notify vendors</p>
+              </div>
+              <button onClick={() => setShowReopenModal(false)} className="text-slate-400 hover:text-slate-600 transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="text-sm font-bold text-slate-700 block mb-2">Re-open Duration (minutes)</label>
+                <input
+                  type="number"
+                  value={reopenDuration}
+                  onChange={e => setReopenDuration(e.target.value)}
+                  placeholder="e.g. 30"
+                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-violet-500 outline-none"
+                />
+                <p className="text-xs text-slate-400 mt-1">Auction will start in 2 minutes and run for this duration from now.</p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-bold text-slate-700">Select Vendors to Invite</label>
+                  <div className="flex gap-2">
+                    <button onClick={() => setReopenVendors(allVendors.map(v => v._id))} className="text-xs text-violet-600 font-bold hover:underline">Select All</button>
+                    <span className="text-slate-300">|</span>
+                    <button onClick={() => setReopenVendors([])} className="text-xs text-slate-400 font-bold hover:underline">Clear</button>
+                  </div>
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                  {allVendors.map(v => {
+                    const wasInvited = (room.invitedVendors || []).some(iv => (iv._id || iv).toString() === v._id.toString());
+                    const isSelected = reopenVendors.includes(v._id);
+                    return (
+                      <div key={v._id} onClick={() => toggleReopenVendor(v._id)}
+                        className={'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ' + (isSelected ? 'bg-violet-50 border-violet-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200')}>
+                        <div className={'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ' + (isSelected ? 'bg-violet-600 border-violet-600' : 'border-slate-300')}>
+                          {isSelected && <CheckCircle className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-900 truncate">{v.companyName}</p>
+                          <p className="text-xs text-slate-400 truncate">{v.email}</p>
+                        </div>
+                        {wasInvited && (
+                          <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded flex-shrink-0">Previous</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  <span className="font-bold text-amber-600">Previous</span> vendors keep the same credentials.
+                  New vendors receive fresh credentials. All get email notifications.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowReopenModal(false)}
+                  className="flex-1 border border-slate-200 text-slate-600 font-bold py-2.5 rounded-lg hover:bg-slate-50 transition text-sm">
+                  Cancel
+                </button>
+                <button onClick={handleReopen} disabled={reopenLoading || reopenVendors.length === 0}
+                  className="flex-1 bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 rounded-lg transition disabled:opacity-60 text-sm flex items-center justify-center gap-2">
+                  <RefreshCw className={'w-4 h-4 ' + (reopenLoading ? 'animate-spin' : '')} />
+                  {reopenLoading ? 'Re-opening...' : 'Re-open & Notify Vendors'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
   );
 };
 

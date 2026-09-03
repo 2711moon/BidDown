@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -28,6 +28,7 @@ const AdminDashboard = () => {
   const [showPwd, setShowPwd] = useState({ old: false, new: false, confirm: false });
   const [newAuction, setNewAuction] = useState({ productName: '', basePrice: '', decrementValue: '', quantity: '1', startTime: '', endTime: '', selectedVendors: [] });
   const [auctionFiles, setAuctionFiles] = useState(null);
+  const [productImage, setProductImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleCreateVendor = async (e) => {
@@ -82,12 +83,14 @@ const AdminDashboard = () => {
       formData.append('startTime', newAuction.startTime);
       formData.append('endTime', newAuction.endTime);
       formData.append('vendors', JSON.stringify(newAuction.selectedVendors));
+      if (productImage) formData.append('productImage', productImage);
       if (auctionFiles) for (let i = 0; i < auctionFiles.length; i++) formData.append('documents', auctionFiles[i]);
       await axios.post('http://172.16.100.174:5000/api/admin/rooms', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Auction created! Invitation emails sent to vendors.');
       setActiveTab('rooms');
       setNewAuction({ productName: '', basePrice: '', decrementValue: '', quantity: '1', startTime: '', endTime: '', selectedVendors: [] });
       setAuctionFiles(null);
+      setProductImage(null);
       fetchData();
     } catch (err) { toast.error(err.response?.data?.message || 'Error creating auction'); }
     finally { setIsSubmitting(false); }
@@ -479,7 +482,17 @@ const AdminDashboard = () => {
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                   <h4 className="font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2"><Package className="w-4 h-4 text-blue-500" /> Product Details</h4>
                   <div><label className="block text-sm font-bold text-slate-700 mb-1">Product Name</label><input required type="text" value={newAuction.productName} onChange={e=>setNewAuction({...newAuction,productName:e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" /></div>
-                  <div><label className="block text-sm font-bold text-slate-700 mb-1">Upload Documents (PDF, Excel, Images)</label><input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" onChange={e=>setAuctionFiles(e.target.files)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm cursor-pointer" /></div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Product Image (optional)</label>
+                    <input type="file" accept="image/*" onChange={e => setProductImage(e.target.files[0])} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm cursor-pointer" />
+                    {productImage && (
+                      <div className="mt-2 relative">
+                        <img src={URL.createObjectURL(productImage)} alt="preview" className="w-full h-32 object-cover rounded-lg border border-slate-200" />
+                        <button type="button" onClick={() => setProductImage(null)} className="absolute top-1 right-1 bg-white border border-slate-200 text-slate-600 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold hover:bg-red-50 hover:text-red-600">x</button>
+                      </div>
+                    )}
+                  </div>
+                  <div><label className="block text-sm font-bold text-slate-700 mb-1">Supporting Documents (PDF, Excel, Word)</label><input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={e=>setAuctionFiles(e.target.files)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-sm cursor-pointer" /></div>
                 </div>
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                   <h4 className="font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2"><Activity className="w-4 h-4 text-amber-500" /> Bidding Rules</h4>

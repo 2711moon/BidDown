@@ -68,6 +68,16 @@ const BiddingRoom = () => {
       toast.success('Auto-Bid active at Rs.' + data.floorAmount.toLocaleString());
       setAutoBidFloor('');
     });
+    newSocket.on('auctionStarted', (data) => {
+      // Auto-transition from waiting room to live auction without refresh
+      setCurrentBid(data.currentLowestBid);
+      setRoomState(prev => ({ ...prev, status: 'active', endTime: data.endTime, currentLowestBid: data.currentLowestBid }));
+      toast.success('Auction has started! Place your bids now.', { duration: 4000 });
+    });
+    newSocket.on('timeExtended', ({ newEndTime, message }) => {
+      setRoomState(prev => ({ ...prev, endTime: newEndTime }));
+      toast(message, { duration: 6000, style: { background: '#f59e0b', color: '#fff', fontWeight: 'bold' } });
+    });
     newSocket.on('bidError', (data) => {
       toast.error(data.message);
     });
@@ -184,8 +194,11 @@ const BiddingRoom = () => {
               <h2 className="text-2xl font-bold text-slate-800">{roomState.product?.name || 'Product Details'}</h2>
             </div>
             
-            <div className="aspect-video bg-slate-100 rounded-xl mb-6 flex items-center justify-center border border-slate-200">
-              <span className="text-slate-400 font-medium">No Image Provided</span>
+            <div className="aspect-video bg-slate-100 rounded-xl mb-6 flex items-center justify-center border border-slate-200 overflow-hidden">
+              {roomState.product?.imageUrl
+                ? <img src={roomState.product.imageUrl} alt={roomState.product?.name} className="w-full h-full object-cover" />
+                : <span className="text-slate-400 font-medium">No Image Provided</span>
+              }
             </div>
 
             <div className="space-y-6">
@@ -278,14 +291,14 @@ const BiddingRoom = () => {
                 <h3 className="font-bold text-slate-800 mb-4">Place Manual Bid</h3>
                 <form onSubmit={handleManualBid} className="space-y-4">
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">Rs.</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Rs.</span>
                     <input 
                       type="number" 
                       value={bidInput}
                       onChange={(e) => setBidInput(e.target.value)}
-                      placeholder="Enter bid amount"
+                      placeholder="Enter amount"
                       disabled={roomState.status === 'closed'}
-                      className="w-full pl-8 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-lg text-lg font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition disabled:opacity-50"
+                      className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-lg text-lg font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition disabled:opacity-50"
                     />
                   </div>
                   <button 
@@ -312,14 +325,14 @@ const BiddingRoom = () => {
                     </div>
                   ) : null}
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">Rs.</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">Rs.</span>
                     <input 
                       type="number" 
                       value={autoBidFloor}
                       onChange={(e) => setAutoBidFloor(e.target.value)}
-                      placeholder="Your floor price"
+                      placeholder="Floor price"
                       disabled={roomState.status === 'closed'}
-                      className="w-full pl-8 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-lg font-bold text-white focus:ring-2 focus:ring-blue-500 outline-none transition disabled:opacity-50"
+                      className="w-full pl-12 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-lg font-bold text-white focus:ring-2 focus:ring-blue-500 outline-none transition disabled:opacity-50"
                     />
                   </div>
                   <button 
