@@ -28,7 +28,16 @@ const bidRoomSchema = new mongoose.Schema({
   }],
   winner: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor' },
   reminderSent: { type: Boolean, default: false },
-  endEmailSent: { type: Boolean, default: false }
+  endEmailSent: { type: Boolean, default: false },
+  broadcasts: [{
+    message: String,
+    createdAt: { type: Date, default: Date.now }
+  }],
+  extensions: [{
+    minutes: Number,
+    reason: { type: String, default: 'Manual' },
+    createdAt: { type: Date, default: Date.now }
+  }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('BidRoom', bidRoomSchema);

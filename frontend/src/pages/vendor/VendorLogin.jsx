@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -43,7 +43,9 @@ const VendorLogin = () => {
       }
     } catch (err) {
       const msg = err.response?.data?.message;
-      if (err.response?.status === 403 && err.response?.data?.minutesToStart) {
+      if (err.response?.status === 403 && msg?.includes('suspended')) {
+        toast.error(msg, { duration: 5000, style: { background: '#fee2e2', color: '#991b1b', border: '1px solid #f87171' } });
+      } else if (err.response?.status === 403 && err.response?.data?.minutesToStart) {
         setGateMsg({ minutesToStart: err.response.data.minutesToStart, startTime: err.response.data.startTime, msg });
       } else {
         toast.error(msg || 'Invalid credentials. Please check your email and password.');

@@ -74,6 +74,43 @@ const AdminDashboard = () => {
   const handleCreateAuction = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+
+    if (!newAuction.productName?.trim()) {
+      toast.error('Product Name is required.');
+      setIsSubmitting(false);
+      return;
+    }
+    if (!newAuction.basePrice || !newAuction.decrementValue || !newAuction.quantity) {
+      toast.error('All Bidding Rules (Base Price, Decrement, Quantity) are required.');
+      setIsSubmitting(false);
+      return;
+    }
+    if (!newAuction.startTime || !newAuction.endTime) {
+      toast.error('Both Start Time and End Time are required.');
+      setIsSubmitting(false);
+      return;
+    }
+    if (newAuction.selectedVendors.length === 0) {
+      toast.error('You must invite at least one vendor.');
+      setIsSubmitting(false);
+      return;
+    }
+    
+    const sTime = new Date(newAuction.startTime);
+    const eTime = new Date(newAuction.endTime);
+    const now = new Date();
+
+    if (eTime <= sTime) {
+      toast.error('Auction end time must be after the start time.');
+      setIsSubmitting(false);
+      return;
+    }
+    if (eTime <= now) {
+      toast.error('Auction end time must be in the future.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const formData = new FormData();
       formData.append('product', JSON.stringify({ name: newAuction.productName }));
@@ -114,6 +151,13 @@ const AdminDashboard = () => {
       await axios.put('http://172.16.100.174:5000/api/admin/vendors/' + id + '/approve');
       toast.success('Vendor approved'); fetchData();
     } catch { toast.error('Error approving vendor'); }
+  };
+
+  const toggleBlacklist = async (id) => {
+    try {
+      const res = await axios.put('http://172.16.100.174:5000/api/admin/vendors/' + id + '/blacklist');
+      toast.success(res.data.message); fetchData();
+    } catch { toast.error('Error updating vendor status'); }
   };
 
   const pendingCount = vendors.filter(v => v.status !== 'approved').length;
@@ -255,8 +299,8 @@ const AdminDashboard = () => {
               </div>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 {[
-                  { key:'savings', label:'Total Savings', value:'Rs.' + reports.totalSavings.toLocaleString(), color:'text-emerald-600' },
-                  { key:'spend', label:'Total Spend', value:'Rs.' + reports.events.reduce((a,e)=>a+e.winningBid,0).toLocaleString(), color:'text-blue-600' },
+                  { key:'savings', label:'Total Savings', value:'Rs.' + reports.totalSavings.toLocaleString('en-IN'), color:'text-emerald-600' },
+                  { key:'spend', label:'Total Spend', value:'Rs.' + reports.events.reduce((a,e)=>a+e.winningBid,0).toLocaleString('en-IN'), color:'text-blue-600' },
                   { key:'completed', label:'Completed Auctions', value:reports.events.length, color:'text-purple-600' },
                   { key:'vendors', label:'Total Vendors', value:vendors.length, color:'text-amber-600' },
                 ].map(c => (
@@ -274,7 +318,7 @@ const AdminDashboard = () => {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-slate-200">
-                      <tr><th className="px-5 py-3">ID</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Base Price</th><th className="px-5 py-3">Start Time</th><th className="px-5 py-3">Status</th></tr>
+                      <tr><th className="px-5 py-3">ID</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Base Price</th><th className="px-5 py-3 text-center">Qty</th><th className="px-5 py-3">Total Contract Value</th><th className="px-5 py-3">Start Time</th><th className="px-5 py-3">Status</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {rooms.filter(r=>r.status==='active').length === 0
@@ -283,7 +327,9 @@ const AdminDashboard = () => {
                           <tr key={room._id} onClick={() => navigate('/admin/room/' + room._id)} className="hover:bg-slate-50 transition-colors cursor-pointer">
                             <td className="px-5 py-4 font-mono text-slate-400 text-xs">{room._id.slice(-6)}</td>
                             <td className="px-5 py-4 font-semibold text-slate-900">{room.product?.name || 'Unknown'}</td>
-                            <td className="px-5 py-4 text-slate-700">Rs.{room.basePrice.toLocaleString()}</td>
+                            <td className="px-5 py-4 text-slate-700">Rs.{room.basePrice.toLocaleString('en-IN')}</td>
+                            <td className="px-5 py-4 text-slate-700 text-center font-bold">{room.quantity || 1}</td>
+                            <td className="px-5 py-4 text-slate-900 font-bold">Rs.{(room.basePrice * (room.quantity || 1)).toLocaleString('en-IN')}</td>
                             <td className="px-5 py-4 text-slate-500">{new Date(room.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()}</td>
                             <td className="px-5 py-4">{statusBadge(room.status)}</td>
                           </tr>
@@ -328,13 +374,13 @@ const AdminDashboard = () => {
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">{selectedAuctionsForAction.length>0?'Export Selected:':'Export All:'}</span>
                     <button onClick={()=>{
                       const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
-                      const csv='data:text/csv;charset=utf-8,'+['ID,Product,Base Price,Start Time,Status'].concat(data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown',r.basePrice,new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),r.status].join(','))).join('\n');
+                      const csv='data:text/csv;charset=utf-8,'+['ID,Product,Unit Base Price,Quantity,Total Contract Value,Start Time,Status'].concat(data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown',r.basePrice,r.quantity||1,(r.basePrice*(r.quantity||1)),new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),r.status].join(','))).join('\n');
                       const a=document.createElement('a');a.href=encodeURI(csv);a.download='auctions.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);
                     }} className="text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-200 transition">CSV</button>
                     <button onClick={async()=>{
                       const XLSX = await import('xlsx');
                       const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
-                      const ws = XLSX.utils.json_to_sheet(data.map(r=>({ID:r._id.slice(-6),Product:r.product?.name||'Unknown','Base Price':r.basePrice,'Start Time':new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),Status:r.status})));
+                      const ws = XLSX.utils.json_to_sheet(data.map(r=>({ID:r._id.slice(-6),Product:r.product?.name||'Unknown','Unit Base Price':r.basePrice,Quantity:r.quantity||1,'Total Contract Value':r.basePrice*(r.quantity||1),'Start Time':new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),Status:r.status})));
                       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Auctions');
                       XLSX.writeFile(wb,'auctions.xlsx');
                     }} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-200 transition">Excel</button>
@@ -344,7 +390,7 @@ const AdminDashboard = () => {
                       const data = selectedAuctionsForAction.length>0 ? rooms.filter(r=>selectedAuctionsForAction.includes(r._id)) : rooms;
                       const doc = new jsPDF();
                       doc.setFontSize(14); doc.text('Auctions List', 14, 16);
-                      autoTable(doc, { startY:22, head:[['ID','Product','Base Price','Start Time','Status']], body:data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown','Rs.'+r.basePrice.toLocaleString(),new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),r.status]), styles:{fontSize:8}, headStyles:{fillColor:[15,23,42]} });
+                      autoTable(doc, { startY:22, head:[['ID','Product','Unit Base','Qty','Total Value','Start Time','Status']], body:data.map(r=>[r._id.slice(-6),r.product?.name||'Unknown','Rs.'+r.basePrice.toLocaleString('en-IN'),r.quantity||1,'Rs.'+(r.basePrice*(r.quantity||1)).toLocaleString('en-IN'),new Date(r.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase(),r.status]), styles:{fontSize:8}, headStyles:{fillColor:[15,23,42]} });
                       doc.save('auctions.pdf');
                     }} className="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition">PDF</button>
                   </div>
@@ -354,7 +400,7 @@ const AdminDashboard = () => {
                     <thead className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-slate-200">
                       <tr>
                         <th className="px-4 py-3 w-10"><input type="checkbox" checked={rooms.length>0&&selectedAuctionsForAction.length===rooms.length} onChange={e=>setSelectedAuctionsForAction(e.target.checked?rooms.map(r=>r._id):[])} className="rounded" /></th>
-                        <th className="px-5 py-3">ID</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Base Price</th><th className="px-5 py-3">Start Time</th><th className="px-5 py-3">Status</th>
+                        <th className="px-5 py-3">ID</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Base Price</th><th className="px-5 py-3 text-center">Qty</th><th className="px-5 py-3">Total Contract Value</th><th className="px-5 py-3">Start Time</th><th className="px-5 py-3">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -365,7 +411,9 @@ const AdminDashboard = () => {
                             <td className="px-4 py-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedAuctionsForAction.includes(room._id)} onChange={e=>setSelectedAuctionsForAction(e.target.checked?[...selectedAuctionsForAction,room._id]:selectedAuctionsForAction.filter(id=>id!==room._id))} className="rounded" /></td>
                             <td className="px-5 py-4 font-mono text-slate-400 text-xs">{room._id.slice(-6)}</td>
                             <td className="px-5 py-4 font-semibold text-slate-900">{room.product?.name || 'Unknown'}</td>
-                            <td className="px-5 py-4 text-slate-700">Rs.{room.basePrice.toLocaleString()}</td>
+                            <td className="px-5 py-4 text-slate-700">Rs.{room.basePrice.toLocaleString('en-IN')}</td>
+                            <td className="px-5 py-4 text-slate-700 text-center font-bold">{room.quantity || 1}</td>
+                            <td className="px-5 py-4 text-slate-900 font-bold">Rs.{(room.basePrice * (room.quantity || 1)).toLocaleString('en-IN')}</td>
                             <td className="px-5 py-4 text-slate-500">{new Date(room.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()}</td>
                             <td className="px-5 py-4">{statusBadge(room.status)}</td>
                           </tr>
@@ -450,14 +498,22 @@ const AdminDashboard = () => {
                             <td className="px-5 py-4 text-slate-600">{v.email}</td>
                             <td className="px-5 py-4 text-slate-600">{v.phone}</td>
                             <td className="px-5 py-4">
-                              <span className={'px-2 py-0.5 text-xs font-bold uppercase border rounded ' + (v.status==='approved'?'border-green-200 text-green-700 bg-green-50':'border-amber-200 text-amber-700 bg-amber-50')}>{v.status}</span>
+                              <div className="flex flex-col gap-1 items-start">
+                                <span className={'px-2 py-0.5 text-xs font-bold uppercase border rounded w-fit ' + (v.status==='approved'?'border-green-200 text-green-700 bg-green-50':'border-amber-200 text-amber-700 bg-amber-50')}>{v.status}</span>
+                                {v.blacklisted && <span className="px-2 py-0.5 text-[10px] font-black uppercase border rounded border-red-200 text-red-700 bg-red-50">Blacklisted</span>}
+                              </div>
                             </td>
-                            <td className="px-5 py-4 text-right flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
-                              <button onClick={()=>{ setNewVendor({...v, password:''}); setShowVendorModal(true); }} className="text-blue-600 font-bold text-xs hover:underline">Edit</button>
-                              {v.status !== 'approved'
-                                ? <button onClick={() => handleApprove(v._id)} className="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-700 transition">Approve</button>
-                                : <span className="text-slate-400 text-xs font-bold flex items-center justify-end gap-1"><CheckCircle className="w-3.5 h-3.5" /> Approved</span>
-                              }
+                            <td className="px-5 py-4 text-right flex flex-col gap-2 items-end" onClick={e => e.stopPropagation()}>
+                              <div className="flex items-center gap-2">
+                                <button onClick={()=>{ setNewVendor({...v, password:''}); setShowVendorModal(true); }} className="text-blue-600 font-bold text-xs hover:underline">Edit</button>
+                                {v.status !== 'approved'
+                                  ? <button onClick={() => handleApprove(v._id)} className="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-700 transition">Approve</button>
+                                  : <span className="text-slate-400 text-xs font-bold flex items-center justify-end gap-1"><CheckCircle className="w-3.5 h-3.5" /> Approved</span>
+                                }
+                              </div>
+                              <button onClick={() => toggleBlacklist(v._id)} className={'text-[10px] font-bold px-2 py-1 rounded transition ' + (v.blacklisted ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-50 text-red-600 hover:bg-red-100')}>
+                                {v.blacklisted ? 'Unblacklist Vendor' : 'Blacklist Vendor'}
+                              </button>
                             </td>
                           </tr>
                         ))
@@ -497,10 +553,16 @@ const AdminDashboard = () => {
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                   <h4 className="font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2"><Activity className="w-4 h-4 text-amber-500" /> Bidding Rules</h4>
                   <div className="grid grid-cols-3 gap-4">
-                    <div><label className="block text-sm font-bold text-slate-700 mb-1">Base Price (Rs.)</label><input required type="number" min="1" value={newAuction.basePrice} onChange={e=>setNewAuction({...newAuction,basePrice:e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" /></div>
-                    <div><label className="block text-sm font-bold text-slate-700 mb-1">Decrement Step</label><input required type="number" min="1" value={newAuction.decrementValue} onChange={e=>setNewAuction({...newAuction,decrementValue:e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" /></div>
+                    <div><label className="block text-sm font-bold text-slate-700 mb-1">Base Price (Per Unit)</label><input required type="number" min="1" value={newAuction.basePrice} onChange={e=>setNewAuction({...newAuction,basePrice:e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" /></div>
+                    <div><label className="block text-sm font-bold text-slate-700 mb-1">Decrement Step (Total)</label><input required type="number" min="1" value={newAuction.decrementValue} onChange={e=>setNewAuction({...newAuction,decrementValue:e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" /></div>
                     <div><label className="block text-sm font-bold text-slate-700 mb-1">Quantity</label><input required type="number" min="1" value={newAuction.quantity} onChange={e=>setNewAuction({...newAuction,quantity:e.target.value})} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm" /></div>
                   </div>
+                  {newAuction.basePrice && newAuction.quantity && (
+                    <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-center justify-between">
+                      <span className="text-sm font-bold text-blue-800">Total Contract Value Preview:</span>
+                      <span className="text-lg font-black text-blue-900">Rs. {(Number(newAuction.basePrice) * Number(newAuction.quantity)).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                   <h4 className="font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2"><svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Schedule</h4>
@@ -514,10 +576,27 @@ const AdminDashboard = () => {
                   <input type="text" placeholder="Search vendors..." value={vendorSearch} onChange={e=>setVendorSearch(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900 text-slate-900 text-sm mb-4" />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
                     {vendors.filter(v=>v.status==='approved'&&(v.companyName.toLowerCase().includes(vendorSearch.toLowerCase())||v.email.toLowerCase().includes(vendorSearch.toLowerCase()))).map(v=>(
-                      <label key={v._id} className={'flex items-center p-3 border rounded-xl cursor-pointer transition ' + (newAuction.selectedVendors.includes(v._id)?'bg-blue-50 border-blue-300':'bg-slate-50 border-slate-200 hover:bg-slate-100')}>
-                        <input type="checkbox" checked={newAuction.selectedVendors.includes(v._id)} onChange={e=>{const s=e.target.checked?[...newAuction.selectedVendors,v._id]:newAuction.selectedVendors.filter(id=>id!==v._id);setNewAuction({...newAuction,selectedVendors:s});}} className="w-4 h-4 rounded" />
-                        <div className="ml-3"><span className="block text-sm font-bold text-slate-900">{v.companyName}</span><span className="block text-xs text-slate-400">{v.email}</span></div>
-                      </label>
+                      <div key={v._id} onClick={() => {
+                        if (v.blacklisted) {
+                          toast.error('Cannot invite a blacklisted vendor. You must unblacklist them from the Vendors tab first.', { duration: 4000 });
+                          return;
+                        }
+                        const s = newAuction.selectedVendors.includes(v._id)
+                          ? newAuction.selectedVendors.filter(id=>id!==v._id)
+                          : [...newAuction.selectedVendors, v._id];
+                        setNewAuction({...newAuction, selectedVendors:s});
+                      }} className={'flex items-center p-3 border rounded-xl transition ' + (v.blacklisted ? 'opacity-70 bg-slate-100 border-slate-200 cursor-not-allowed' : newAuction.selectedVendors.includes(v._id)?'bg-blue-50 border-blue-300 cursor-pointer':'bg-slate-50 border-slate-200 hover:bg-slate-100 cursor-pointer')}>
+                        <input type="checkbox" readOnly checked={newAuction.selectedVendors.includes(v._id)} className="w-4 h-4 rounded" />
+                        <div className="ml-3 flex-1">
+                          <span className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                            {v.companyName}
+                            {v.blacklisted && (
+                              <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 px-1.5 py-0.5 rounded border border-red-200">Blacklisted</span>
+                            )}
+                          </span>
+                          <span className="block text-xs text-slate-400">{v.email}</span>
+                        </div>
+                      </div>
                     ))}
                     {vendors.filter(v=>v.status==='approved').length===0 && <p className="text-sm text-slate-400 col-span-2 p-2">No approved vendors available.</p>}
                   </div>
@@ -576,13 +655,13 @@ const AdminDashboard = () => {
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">{selectedReports.length>0?'Export Selected:':'Export All:'}</span>
                     <button onClick={()=>{
                       const data = selectedReports.length>0 ? filterReports().filter(e=>selectedReports.includes(e.room)) : filterReports();
-                      const csv='data:text/csv;charset=utf-8,'+['Room ID,Product,Winner,Base Price,Winning Bid,Savings'].concat(data.map(e=>[e.room.slice(-6),e.product,e.winner,e.basePrice,e.winningBid,e.saving].join(','))).join('\n');
+                      const csv='data:text/csv;charset=utf-8,'+['Room ID,Product,Winner,Unit Base Price,Quantity,Total Base Price,Winning Bid,Savings'].concat(data.map(e=>[e.room.slice(-6),e.product,e.winner,e.basePrice,e.quantity||1,e.totalBasePrice||(e.basePrice*(e.quantity||1)),e.winningBid,e.saving].join(','))).join('\n');
                       const a=document.createElement('a');a.href=encodeURI(csv);a.download='reports.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);
                     }} className="text-xs bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-200 transition">CSV</button>
                     <button onClick={async()=>{
                       const XLSX = await import('xlsx');
                       const data = selectedReports.length>0 ? filterReports().filter(e=>selectedReports.includes(e.room)) : filterReports();
-                      const ws = XLSX.utils.json_to_sheet(data.map(e=>({'Room ID':e.room.slice(-6),'Product':e.product,'Winner':e.winner,'Base Price':e.basePrice,'Winning Bid':e.winningBid,'Savings':e.saving})));
+                      const ws = XLSX.utils.json_to_sheet(data.map(e=>({'Room ID':e.room.slice(-6),'Product':e.product,'Winner':e.winner,'Unit Base Price':e.basePrice,'Quantity':e.quantity||1,'Total Base Price':e.totalBasePrice||(e.basePrice*(e.quantity||1)),'Winning Bid':e.winningBid,'Savings':e.saving})));
                       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Reports');
                       XLSX.writeFile(wb,'reports.xlsx');
                     }} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-200 transition">Excel</button>
@@ -592,7 +671,7 @@ const AdminDashboard = () => {
                       const data = selectedReports.length>0 ? filterReports().filter(e=>selectedReports.includes(e.room)) : filterReports();
                       const doc = new jsPDF();
                       doc.setFontSize(14); doc.text('Financial Reports', 14, 16);
-                      autoTable(doc, { startY:22, head:[['Room','Product','Winner','Base Price','Winning Bid','Savings']], body:data.map(e=>[e.room.slice(-6),e.product,e.winner,'Rs.'+e.basePrice.toLocaleString(),'Rs.'+e.winningBid.toLocaleString(),'Rs.'+e.saving.toLocaleString()]), styles:{fontSize:8}, headStyles:{fillColor:[15,23,42]} });
+                      autoTable(doc, { startY:22, head:[['Room','Product','Winner','Unit Base','Qty','Total Base','Winning Bid','Savings']], body:data.map(e=>[e.room.slice(-6),e.product,e.winner,'Rs.'+e.basePrice.toLocaleString('en-IN'),e.quantity||1,'Rs.'+(e.totalBasePrice||(e.basePrice*(e.quantity||1))).toLocaleString('en-IN'),'Rs.'+e.winningBid.toLocaleString('en-IN'),'Rs.'+e.saving.toLocaleString('en-IN')]), styles:{fontSize:8}, headStyles:{fillColor:[15,23,42]} });
                       doc.save('reports.pdf');
                     }} className="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition">PDF</button>
                   </div>
@@ -602,21 +681,23 @@ const AdminDashboard = () => {
                     <thead className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-slate-200">
                       <tr>
                         <th className="px-4 py-3 w-10"><input type="checkbox" checked={filterReports().length>0&&selectedReports.length===filterReports().length} onChange={e=>setSelectedReports(e.target.checked?filterReports().map(ev=>ev.room):[])} className="rounded" /></th>
-                        <th className="px-5 py-3">Room</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Winner</th><th className="px-5 py-3 text-right">Base</th><th className="px-5 py-3 text-right">Winning Bid</th><th className="px-5 py-3 text-right text-emerald-700">Savings</th>
+                        <th className="px-5 py-3">Room</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Winner</th><th className="px-5 py-3 text-right">Base</th><th className="px-5 py-3 text-center">Qty</th><th className="px-5 py-3 text-right">Total Base</th><th className="px-5 py-3 text-right">Winning Bid</th><th className="px-5 py-3 text-right text-emerald-700">Savings</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filterReports().length === 0
-                        ? <tr><td colSpan="7" className="px-5 py-8 text-center text-slate-400">No reports match the selected filters.</td></tr>
+                        ? <tr><td colSpan="9" className="px-5 py-8 text-center text-slate-400">No reports match the selected filters.</td></tr>
                         : filterReports().map(ev => (
                           <tr key={ev.room} onClick={()=>setViewDetails({type:'auction',data:{_id:ev.room,product:{name:ev.product},basePrice:ev.basePrice,winner:{companyName:ev.winner},currentLowestBid:ev.winningBid,startTime:ev.startTime,endTime:ev.endTime,status:'completed'}})} className="hover:bg-slate-50 transition-colors cursor-pointer">
                             <td className="px-4 py-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedReports.includes(ev.room)} onChange={e=>setSelectedReports(e.target.checked?[...selectedReports,ev.room]:selectedReports.filter(id=>id!==ev.room))} className="rounded" /></td>
                             <td className="px-5 py-4 font-mono text-slate-400 text-xs">{ev.room.slice(-6)}</td>
                             <td className="px-5 py-4 font-semibold text-slate-900">{ev.product}</td>
                             <td className="px-5 py-4 text-slate-600">{ev.winner}</td>
-                            <td className="px-5 py-4 text-right text-slate-400 line-through text-xs">Rs.{ev.basePrice.toLocaleString()}</td>
-                            <td className="px-5 py-4 text-right font-bold text-slate-900">Rs.{ev.winningBid.toLocaleString()}</td>
-                            <td className="px-5 py-4 text-right font-bold text-emerald-600">Rs.{ev.saving.toLocaleString()}</td>
+                            <td className="px-5 py-4 text-right text-slate-500 text-xs">Rs.{ev.basePrice.toLocaleString('en-IN')}</td>
+                            <td className="px-5 py-4 text-center font-bold text-slate-700">{ev.quantity || 1}</td>
+                            <td className="px-5 py-4 text-right text-slate-400 line-through text-xs">Rs.{(ev.totalBasePrice || (ev.basePrice * (ev.quantity || 1))).toLocaleString('en-IN')}</td>
+                            <td className="px-5 py-4 text-right font-bold text-slate-900">Rs.{ev.winningBid.toLocaleString('en-IN')}</td>
+                            <td className="px-5 py-4 text-right font-bold text-emerald-600">Rs.{ev.saving.toLocaleString('en-IN')}</td>
                           </tr>
                         ))
                       }
@@ -683,7 +764,7 @@ const AdminDashboard = () => {
             </div>
             <div className="p-6 overflow-y-auto flex-1 space-y-4">
               {viewDetails.type==='vendor'&&(<div className="grid grid-cols-2 gap-4">{[['Company',viewDetails.data.companyName],['Contact',viewDetails.data.contactPerson],['Email',viewDetails.data.email],['Phone',viewDetails.data.phone],['Status',viewDetails.data.status]].map(([l,v])=>(<div key={l}><p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">{l}</p><p className="text-sm font-semibold text-slate-900">{v}</p></div>))}{viewDetails.data.documents&&viewDetails.data.documents.length>0&&<div className="col-span-2"><p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Documents</p><div className="space-y-1">{viewDetails.data.documents.map((doc,i)=>(<a key={i} href={doc.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 text-sm text-blue-600 hover:underline truncate">{doc.name}</a>))}</div></div>}</div>)}
-              {viewDetails.type==='auction'&&(<div className="grid grid-cols-2 gap-4">{[['Product',viewDetails.data.product?.name||'Unknown'],['Base Price','Rs.'+viewDetails.data.basePrice?.toLocaleString()],['Start',new Date(viewDetails.data.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()],['End',new Date(viewDetails.data.endTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()],['Status',viewDetails.data.status],['Winner',viewDetails.data.winner?.companyName||'No Winner'],['Winning Bid','Rs.'+(viewDetails.data.currentLowestBid||viewDetails.data.basePrice)?.toLocaleString()]].map(([l,v])=>(<div key={l}><p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">{l}</p><p className="text-sm font-semibold text-slate-900">{v}</p></div>))}</div>)}
+              {viewDetails.type==='auction'&&(<div className="grid grid-cols-2 gap-4">{[['Product',viewDetails.data.product?.name||'Unknown'],['Unit Base Price','Rs.'+viewDetails.data.basePrice?.toLocaleString('en-IN')],['Quantity',viewDetails.data.quantity||1],['Total Contract Value','Rs.'+(viewDetails.data.basePrice*(viewDetails.data.quantity||1)).toLocaleString('en-IN')],['Start',new Date(viewDetails.data.startTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()],['End',new Date(viewDetails.data.endTime).toLocaleString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase()],['Status',viewDetails.data.status],['Winner',viewDetails.data.winner?.companyName||'No Winner'],['Winning Bid','Rs.'+(viewDetails.data.currentLowestBid||(viewDetails.data.basePrice*(viewDetails.data.quantity||1)))?.toLocaleString('en-IN')]].map(([l,v])=>(<div key={l}><p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">{l}</p><p className="text-sm font-semibold text-slate-900">{v}</p></div>))}</div>)}
             </div>
             <div className="p-6 border-t border-slate-200 shrink-0"><button onClick={()=>setViewDetails(null)} className="w-full py-3 bg-slate-100 text-slate-900 font-bold rounded-xl hover:bg-slate-200 transition">Close</button></div>
           </div>
@@ -699,8 +780,8 @@ const AdminDashboard = () => {
               <button onClick={()=>setOpenCardModal(null)} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 text-2xl font-bold leading-none">&times;</button>
             </div>
             <div className="p-6 space-y-2 text-center">
-              {openCardModal==='savings'&&<><p className="text-4xl font-black text-emerald-600">Rs.{reports.totalSavings.toLocaleString()}</p><p className="text-sm text-slate-500">Total savings across all completed auctions.</p></>}
-              {openCardModal==='spend'&&<><p className="text-4xl font-black text-blue-600">Rs.{reports.events.reduce((a,e)=>a+e.winningBid,0).toLocaleString()}</p><p className="text-sm text-slate-500">Total procurement spend.</p></>}
+              {openCardModal==='savings'&&<><p className="text-4xl font-black text-emerald-600">Rs.{reports.totalSavings.toLocaleString('en-IN')}</p><p className="text-sm text-slate-500">Total savings across all completed auctions.</p></>}
+              {openCardModal==='spend'&&<><p className="text-4xl font-black text-blue-600">Rs.{reports.events.reduce((a,e)=>a+e.winningBid,0).toLocaleString('en-IN')}</p><p className="text-sm text-slate-500">Total procurement spend.</p></>}
               {openCardModal==='completed'&&<><p className="text-4xl font-black text-purple-600">{reports.events.length}</p><p className="text-sm text-slate-500">Auctions successfully completed.</p></>}
               {openCardModal==='vendors'&&<><p className="text-4xl font-black text-amber-600">{vendors.length}</p><p className="text-sm text-slate-500">{vendors.filter(v=>v.status==='approved').length} approved of {vendors.length} total.</p></>}
             </div>

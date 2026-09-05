@@ -29,7 +29,7 @@ exports.sendAuctionInvite = async ({ vendor, room, product, accessPassword, logi
     + '<div style="background:#111827;padding:28px 32px"><h1 style="color:#fff;margin:0;font-size:22px;font-weight:900">BID ON — Auction Invitation</h1></div>'
     + '<div style="padding:32px">'
     + '<p style="color:#374151;font-size:15px">Dear <strong>' + vendor.contactPerson + '</strong>,</p>'
-    + '<p style="color:#374151;font-size:15px">You have been invited to a reverse auction for <strong>' + product + '</strong>.</p>'
+    + '<p style="color:#374151;font-size:15px">You have been invited to a reverse auction to supply a total quantity of <strong>' + room.quantity + ' ' + product + '(s)</strong>.</p>'
     + '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:20px;margin:20px 0">'
     + '<h2 style="margin:0 0 14px;font-size:15px;color:#111">Auction Details</h2>'
     + '<table style="width:100%;font-size:14px;color:#374151;border-collapse:collapse">'
@@ -37,7 +37,9 @@ exports.sendAuctionInvite = async ({ vendor, room, product, accessPassword, logi
     + '<tr><td style="padding:5px 0;font-weight:700">Start Time</td><td>' + fmt(room.startTime) + '</td></tr>'
     + '<tr><td style="padding:5px 0;font-weight:700">End Time</td><td>' + fmt(room.endTime) + '</td></tr>'
     + '<tr><td style="padding:5px 0;font-weight:700">Duration</td><td>' + dur(room.startTime, room.endTime) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;font-weight:700">Base Price</td><td>' + money(room.basePrice) + '</td></tr>'
+    + '<tr><td style="padding:5px 0;font-weight:700">Quantity</td><td>' + room.quantity + '</td></tr>'
+    + '<tr><td style="padding:5px 0;font-weight:700">Base Price (Unit)</td><td>' + money(room.basePrice) + '</td></tr>'
+    + '<tr><td style="padding:5px 0;font-weight:900;color:#111">Total Contract Value</td><td style="font-weight:900;color:#111">' + money(room.basePrice * room.quantity) + '</td></tr>'
     + '</table></div>'
     + '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;margin:20px 0">'
     + '<h2 style="margin:0 0 14px;font-size:15px;color:#166534">Your Login Credentials</h2>'
@@ -61,10 +63,10 @@ exports.sendAuctionInvite = async ({ vendor, room, product, accessPassword, logi
 exports.sendAuctionReminder = async ({ vendor, room, product, accessPassword, loginUrl }) => {
   const html = '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif">'
     + '<div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden">'
-    + '<div style="background:#dc2626;padding:28px 32px"><h1 style="color:#fff;margin:0;font-size:22px;font-weight:900">BID ON - Auction Starting in 5 Minutes!</h1></div>'
+    + '<div style="background:#dc2626;padding:28px 32px"><h1 style="color:#fff;margin:0;font-size:22px;font-weight:900">ACTION REQUIRED — Auction Starting</h1></div>'
     + '<div style="padding:32px">'
     + '<p style="color:#374151;font-size:15px">Dear <strong>' + vendor.contactPerson + '</strong>,</p>'
-    + '<p style="color:#374151;font-size:16px">This is a reminder: the auction for <strong>' + product + '</strong> begins in approximately <strong>5 minutes</strong>. Please log in now.</p>'
+    + '<p style="color:#374151;font-size:15px">This is a reminder that the reverse auction to supply a total quantity of <strong>' + room.quantity + ' ' + product + '(s)</strong> is starting in <strong>5 minutes</strong>.</p>'
     + '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px;margin:20px 0">'
     + '<h2 style="margin:0 0 12px;font-size:15px;color:#dc2626">Your Credentials</h2>'
     + '<table style="width:100%;font-size:14px;color:#374151;border-collapse:collapse">'
@@ -79,10 +81,10 @@ exports.sendAuctionReminder = async ({ vendor, room, product, accessPassword, lo
   await send(vendor.email, 'REMINDER: Auction Starting in 5 Minutes - ' + product, html);
 };
 
-exports.sendAuctionEnded = async ({ vendor, product, isWinner, winningBid }) => {
+exports.sendAuctionEnded = async ({ vendor, product, quantity, isWinner, winningBid }) => {
   const inner = isWinner
-    ? '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;margin:20px 0"><h2 style="color:#166534;margin:0 0 10px">Congratulations! You Won!</h2><p style="color:#374151;font-size:14px;margin:0">Your bid of <strong>' + money(winningBid) + '</strong> won the auction for <strong>' + product + '</strong>. Our team will be in touch.</p></div>'
-    : '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:20px;margin:20px 0"><p style="color:#374151;font-size:14px;margin:0">Thank you for participating in the auction for <strong>' + product + '</strong>. We appreciate your time and look forward to your participation in future auctions.</p></div>';
+    ? '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;margin:20px 0"><h2 style="color:#166534;margin:0 0 10px">Congratulations! You Won!</h2><p style="color:#374151;font-size:14px;margin:0">Your bid of <strong>' + money(winningBid) + '</strong> won the auction to supply a total quantity of <strong>' + quantity + ' ' + product + '(s)</strong>. Our team will be in touch to coordinate the purchase order.</p></div>'
+    : '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:20px;margin:20px 0"><p style="color:#374151;font-size:14px;margin:0">Thank you for participating in the auction to supply <strong>' + quantity + ' ' + product + '(s)</strong>. We appreciate your time and look forward to your participation in future auctions.</p></div>';
   const html = '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif">'
     + '<div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden">'
     + '<div style="background:#111827;padding:28px 32px"><h1 style="color:#fff;margin:0;font-size:22px;font-weight:900">BID ON - Auction Concluded</h1></div>'

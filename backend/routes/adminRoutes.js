@@ -12,6 +12,7 @@ router.post('/vendors', upload.array('documents', 10), ctrl.createVendor);
 router.put('/vendors/:id', upload.array('documents', 10), ctrl.updateVendor);
 router.delete('/vendors/:id', ctrl.deleteVendor);
 router.put('/vendors/:id/approve', ctrl.approveVendor);
+router.put('/vendors/:id/blacklist', ctrl.toggleBlacklist);
 
 router.post('/rooms', upload.fields([{ name: 'productImage', maxCount: 1 }, { name: 'documents', maxCount: 10 }]), ctrl.createRoom);
 router.get('/rooms', ctrl.getRooms);

@@ -39,7 +39,7 @@ setInterval(async () => {
       await BidRoom.findByIdAndUpdate(room._id, { status: 'active' });
       // Notify all vendors in this room to transition from waiting room to live auction
       io.to(room._id.toString()).emit('auctionStarted', {
-        currentLowestBid: room.currentLowestBid || room.basePrice,
+        currentLowestBid: room.currentLowestBid || (room.basePrice * room.quantity),
         endTime: room.endTime,
         status: 'active'
       });
@@ -55,7 +55,7 @@ setInterval(async () => {
         const vendor = await Vendor.findById(code.vendor).select('-password');
         if (!vendor) continue;
         const isWinner = room.winner && room.winner._id.toString() === vendor._id.toString();
-        emailService.sendAuctionEnded({ vendor, product: productName, isWinner, winningBid: room.currentLowestBid });
+        emailService.sendAuctionEnded({ vendor, product: productName, quantity: room.quantity, isWinner, winningBid: room.currentLowestBid });
       }
     }
   } catch (error) { console.error('Status update error:', error); }

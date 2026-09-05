@@ -17,6 +17,9 @@ const BiddingRoom = () => {
   const [activeAutoBidFloor, setActiveAutoBidFloor] = useState(null);
   const [timeLeft, setTimeLeft] = useState('');
   const [isEndingSoon, setIsEndingSoon] = useState(false);
+  const [hasAcknowledged, setHasAcknowledged] = useState(sessionStorage.getItem(`ack_${id}`) === 'true');
+  const [broadcasts, setBroadcasts] = useState([]);
+  const [extensionNotice, setExtensionNotice] = useState('');
 
   useEffect(() => {
     let interval;
@@ -34,6 +37,14 @@ const BiddingRoom = () => {
           status: start > now ? 'waiting' : room.status
         });
         setCurrentBid(room.currentLowestBid);
+        
+        if (room.broadcasts && room.broadcasts.length > 0) {
+          setBroadcasts(room.broadcasts.map(b => b.message));
+        }
+        if (room.extensions && room.extensions.length > 0) {
+          const latestExt = room.extensions[room.extensions.length - 1];
+          setExtensionNotice(`Auction extended by ${latestExt.minutes} minute${latestExt.minutes > 1 ? 's' : ''}`);
+        }
       } catch (err) {
         toast.error('Failed to load room details');
         setRoomState({ status: 'error', message: 'Could not load room' });
@@ -55,7 +66,7 @@ const BiddingRoom = () => {
 
     newSocket.on('newLowestBid', (data) => {
       setCurrentBid(data.amount);
-      toast.success(`New lowest bid: Rs.${data.amount.toLocaleString()}`, {
+      toast.success(`New lowest bid: Rs.${data.amount.toLocaleString('en-IN')}`, {
         style: { borderRadius: '10px', background: '#333', color: '#fff' }
       });
     });
@@ -65,7 +76,7 @@ const BiddingRoom = () => {
     });
     newSocket.on('autoBidSuccess', (data) => {
       setActiveAutoBidFloor(data.floorAmount);
-      toast.success('Auto-Bid active at Rs.' + data.floorAmount.toLocaleString());
+      toast.success('Auto-Bid active at Rs.' + data.floorAmount.toLocaleString('en-IN'));
       setAutoBidFloor('');
     });
     newSocket.on('auctionStarted', (data) => {
@@ -74,12 +85,20 @@ const BiddingRoom = () => {
       setRoomState(prev => ({ ...prev, status: 'active', endTime: data.endTime, currentLowestBid: data.currentLowestBid }));
       toast.success('Auction has started! Place your bids now.', { duration: 4000 });
     });
-    newSocket.on('timeExtended', ({ newEndTime, message }) => {
+    newSocket.on('timeExtended', ({ newEndTime, message, extendedBy }) => {
       setRoomState(prev => ({ ...prev, endTime: newEndTime }));
+      if (extendedBy) {
+        setExtensionNotice(`Auction extended by ${extendedBy} minute${extendedBy > 1 ? 's' : ''}`);
+      } else {
+        setExtensionNotice('Auction duration extended');
+      }
       toast(message, { duration: 6000, style: { background: '#f59e0b', color: '#fff', fontWeight: 'bold' } });
     });
     newSocket.on('bidError', (data) => {
       toast.error(data.message);
+    });
+    newSocket.on('broadcastReceived', ({ message }) => {
+      setBroadcasts(prev => [...prev, message]);
     });
 
     // Countdown Timer logic
@@ -159,7 +178,7 @@ const BiddingRoom = () => {
       <div className="max-w-2xl mx-auto mt-20 bg-white p-12 rounded-2xl shadow-xl text-center border-t-8 border-amber-400">
         <Clock className="w-16 h-16 text-amber-400 mx-auto mb-6 animate-bounce" />
         <h2 className="text-4xl font-extrabold mb-4 text-slate-800">Waiting Room</h2>
-        <p className="text-slate-600 mb-8 text-lg">You are early! The auction is scheduled to start at <br/><span className="font-bold text-slate-900">{new Date(roomState.startTime).toLocaleString()}</span></p>
+        <p className="text-slate-600 mb-8 text-lg">You are early! The auction is scheduled to start at <br/><span className="font-bold text-slate-900">{new Date(roomState.startTime).toLocaleString('en-IN')}</span></p>
         <div className="bg-slate-50 p-4 rounded-lg inline-block">
           <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Time until start</div>
           <div className="text-2xl font-mono font-bold text-amber-600">
@@ -171,6 +190,82 @@ const BiddingRoom = () => {
   }
 
   return (
+    <>
+      {/* T&C Modal */}
+      {!hasAcknowledged && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-slate-900 p-6 text-center">
+              <h2 className="text-2xl font-black text-white">Terms & Conditions</h2>
+              <p className="text-slate-400 text-sm mt-1">Please agree to the rules before participating</p>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-2 border-b pb-1">English</h3>
+                <ul className="list-disc pl-5 text-sm text-slate-600 space-y-1.5">
+                  <li>Every bid you place is <strong>final and binding</strong>. You cannot take it back once submitted.</li>
+                  <li>The vendor who bids the <strong>lowest price</strong> wins the auction.</li>
+                  <li>If you win, you are <strong>obligated to supply</strong> the product or service at the price you bid.</li>
+                  <li>Your identity and company name are <strong>hidden from other vendors</strong> at all times.</li>
+                  <li>Placing bids with no intention of fulfilling the order (dummy bidding) is <strong>strictly prohibited</strong>.</li>
+                  <li>The Administrator's decision on any dispute is <strong>final</strong>.</li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-2 border-b pb-1">मराठी</h3>
+                <ul className="list-disc pl-5 text-sm text-slate-600 space-y-1.5">
+                  <li>तुम्ही दिलेली प्रत्येक bid <strong>अंतिम आणि बंधनकारक</strong> आहे. एकदा submit केल्यावर ती मागे घेता येणार नाही.</li>
+                  <li>सर्वात <strong>कमी किंमत</strong> bid करणारा vendor auction जिंकतो.</li>
+                  <li>जर तुम्ही जिंकलात, तर तुम्ही bid केलेल्या किंमतीला product किंवा सेवा <strong>पुरवण्यास बांधील</strong> आहात.</li>
+                  <li>तुमची ओळख आणि कंपनीचे नाव इतर vendors पासून <strong>नेहमी गुप्त</strong> ठेवले जाते.</li>
+                  <li>Order पूर्ण करण्याच्या हेतूशिवाय bid करणे (dummy bidding) <strong>पूर्णपणे प्रतिबंधित</strong> आहे.</li>
+                  <li>कोणत्याही वादावर Administrator चा निर्णय <strong>अंतिम</strong> असतो.</li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-2 border-b pb-1">हिंदी</h3>
+                <ul className="list-disc pl-5 text-sm text-slate-600 space-y-1.5">
+                  <li>आपके द्वारा लगाई गई हर bid <strong>अंतिम और बाध्यकारी</strong> है। एक बार submit करने के बाद इसे वापस नहीं लिया जा सकता।</li>
+                  <li>जो vendor सबसे <strong>कम कीमत</strong> की bid लगाता है वह auction जीतता है।</li>
+                  <li>यदि आप जीतते हैं, तो आप अपनी bid की गई कीमत पर product या सेवा <strong>देने के लिए बाध्य</strong> हैं।</li>
+                  <li>आपकी पहचान और कंपनी का नाम हर समय अन्य vendors से <strong>पूरी तरह गुप्त</strong> रखा जाता है।</li>
+                  <li>Order पूरा करने के इरादे के बिना bid लगाना (dummy bidding) <strong>सख्त वर्जित</strong> है।</li>
+                  <li>किसी भी विवाद पर Administrator का निर्णय <strong>अंतिम</strong> होगा।</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="p-6 bg-slate-50 border-t border-slate-200">
+              <button 
+                onClick={() => {
+                  sessionStorage.setItem(`ack_${id}`, 'true');
+                  setHasAcknowledged(true);
+                }}
+                className="w-full bg-slate-900 hover:bg-slate-700 text-white font-black py-4 rounded-xl transition shadow-lg active:scale-[0.98] text-lg"
+              >
+                I Agree / मी सहमत आहे / मैं सहमत हूँ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Broadcast Marquee */}
+      {broadcasts.length > 0 && (
+        <div className="bg-red-100 border-y-4 border-red-600 overflow-hidden relative py-2 z-50 shadow-xl">
+          <marquee className="text-red-600 font-black text-2xl uppercase tracking-widest animate-pulse" scrollamount="10">
+            {broadcasts.map((msg, idx) => (
+              <span key={idx} className="mx-8">
+                ⚠️ {msg}
+              </span>
+            ))}
+          </marquee>
+        </div>
+      )}
+
     <div className="max-w-6xl mx-auto px-4 mt-8">
       {/* Top Navigation */}
       <div className="flex justify-between items-center mb-6">
@@ -250,10 +345,17 @@ const BiddingRoom = () => {
                   Auction Closed
                 </span>
               ) : (
-                <span className="bg-emerald-100 text-emerald-700 px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-wide flex items-center shadow-sm">
-                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping mr-2"></span>
-                  Live Auction
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="bg-emerald-100 text-emerald-700 px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-wide flex items-center shadow-sm w-fit">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping mr-2"></span>
+                    Live Auction
+                  </span>
+                  {extensionNotice && (
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-1.5 rounded border border-amber-200 flex items-center gap-1 shadow-sm">
+                      <AlertCircle className="w-3 h-3" /> {extensionNotice}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             <div className={`text-right flex flex-col items-end ${isEndingSoon ? 'animate-pulse' : ''}`}>
@@ -271,14 +373,21 @@ const BiddingRoom = () => {
 
           {/* Price Display */}
           <div className="p-12 text-center flex-1 flex flex-col justify-center border-b border-slate-100">
-            <span className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Current Lowest Market Price</span>
-            <div className="text-7xl font-black text-slate-900 tracking-tighter flex items-center justify-center">
-              <span className="text-4xl text-slate-400 mr-2">Rs.</span>
-              {currentBid ? currentBid.toLocaleString() : '---'}
+            <span className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">
+              Current Lowest Market Price
+              {roomState.quantity && (
+                <span className="ml-2 bg-blue-50 text-blue-600 px-2 py-1 rounded text-xs font-black">
+                  (For total quantity: {roomState.quantity})
+                </span>
+              )}
+            </span>
+            <div className={`font-black text-slate-900 tracking-tighter flex flex-wrap items-center justify-center break-all ${currentBid?.toLocaleString('en-IN').length > 11 ? 'text-4xl sm:text-5xl lg:text-6xl' : currentBid?.toLocaleString('en-IN').length > 8 ? 'text-5xl sm:text-6xl lg:text-7xl' : 'text-6xl sm:text-7xl lg:text-8xl'}`}>
+              <span className="text-2xl sm:text-3xl lg:text-4xl text-slate-400 mr-2 mt-2">Rs.</span>
+              {currentBid ? currentBid.toLocaleString('en-IN') : '---'}
             </div>
             <div className="mt-6 inline-flex items-center bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-medium">
               <TrendingDown className="w-4 h-4 mr-2" />
-              Minimum decrement step: Rs.{roomState.decrementValue?.toLocaleString()}
+              Minimum decrement step: Rs.{roomState.decrementValue?.toLocaleString('en-IN')}
             </div>
           </div>
 
@@ -320,7 +429,7 @@ const BiddingRoom = () => {
                   {activeAutoBidFloor ? (
                     <div className="bg-emerald-900/50 border border-emerald-500/30 p-4 rounded-lg text-center">
                       <p className="text-emerald-400 font-bold text-sm mb-1">AUTO-BID ACTIVE</p>
-                      <p className="text-white text-2xl font-black mb-1">Rs.{activeAutoBidFloor.toLocaleString()}</p>
+                      <p className="text-white text-2xl font-black mb-1">Rs.{activeAutoBidFloor.toLocaleString('en-IN')}</p>
                       <p className="text-xs text-emerald-200/70">System is bidding on your behalf down to this floor.</p>
                     </div>
                   ) : null}
@@ -349,7 +458,8 @@ const BiddingRoom = () => {
         </div>
       </div>
     </div>
-  </div>
+    </div>
+    </>
   );
 };
 

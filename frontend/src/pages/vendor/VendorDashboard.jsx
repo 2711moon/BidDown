@@ -93,7 +93,7 @@ const VendorDashboard = () => {
                     <div className="mt-4 space-y-3 mb-8">
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-500 dark:text-zinc-400">Opening Price</span>
-                        <span className="font-bold text-slate-700 dark:text-zinc-300">Rs.{room.basePrice.toLocaleString()}</span>
+                        <span className="font-bold text-slate-700 dark:text-zinc-300">Rs.{(room.basePrice * (room.quantity || 1)).toLocaleString('en-IN')}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-500 dark:text-zinc-400">Scheduled Time</span>

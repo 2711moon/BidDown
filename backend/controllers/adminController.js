@@ -112,6 +112,16 @@ exports.deleteVendor = async (req, res) => {
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
+exports.toggleBlacklist = async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.params.id);
+    if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
+    vendor.blacklisted = !vendor.blacklisted;
+    await vendor.save();
+    res.json({ message: vendor.blacklisted ? 'Vendor blacklisted' : 'Vendor access restored', vendor });
+  } catch (error) { res.status(500).json({ message: error.message }); }
+};
+
 exports.getRooms = async (req, res) => {
   try {
     const rooms = await BidRoom.find().populate('product').populate('winner', 'companyName email');
@@ -122,6 +132,18 @@ exports.getRooms = async (req, res) => {
 exports.createRoom = async (req, res) => {
   try {
     const { basePrice, decrementValue, quantity, startTime, endTime, vendors: vendorIds } = req.body;
+    
+    const sTime = new Date(startTime);
+    const eTime = new Date(endTime);
+    const now = new Date();
+
+    if (eTime <= sTime) {
+      return res.status(400).json({ message: 'Auction end time must be after the start time.' });
+    }
+    if (eTime <= now) {
+      return res.status(400).json({ message: 'Auction end time must be in the future.' });
+    }
+
     let { product } = req.body;
     if (typeof product === 'string') {
       product = JSON.parse(product);
@@ -137,7 +159,7 @@ exports.createRoom = async (req, res) => {
     const documents = [];
     if (req.files && req.files.documents && req.files.documents.length > 0) {
       for (const file of req.files.documents) {
-        documents.push({ name: file.originalname, url: file.path, type: file.mimetype });
+        documents.push({ name: file.originalname, url: file.path, fileType: file.mimetype });
       }
     }
 
@@ -183,8 +205,11 @@ exports.createRoom = async (req, res) => {
 
     res.status(201).json(room);
   } catch (error) {
-    console.error('createRoom error:', error);
-    res.status(500).json({ message: error.message });
+    console.error('=================== CREATEROOM ERROR ===================');
+    console.error(error);
+    console.error('Stack:', error.stack);
+    console.error('========================================================');
+    res.status(500).json({ message: error.message || 'Unknown server error' });
   }
 };
 
@@ -235,13 +260,16 @@ exports.getReports = async (req, res) => {
     const completedRooms = await BidRoom.find({ status: 'completed' }).populate('product').populate('winner', 'companyName email');
     let totalSavings = 0;
     const events = completedRooms.map(room => {
-      const saving = room.basePrice - (room.currentLowestBid || room.basePrice);
+      const totalBasePrice = room.basePrice * room.quantity;
+      const saving = totalBasePrice - (room.currentLowestBid || totalBasePrice);
       totalSavings += saving;
       return {
         room: room._id,
         product: room.product ? room.product.name : 'Unknown',
         basePrice: room.basePrice,
-        winningBid: room.currentLowestBid || room.basePrice,
+        quantity: room.quantity,
+        totalBasePrice: totalBasePrice,
+        winningBid: room.currentLowestBid || totalBasePrice,
         saving,
         winner: room.winner ? room.winner.companyName : 'No Winner',
         endTime: room.endTime,

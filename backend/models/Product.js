@@ -13,8 +13,8 @@ const productSchema = new mongoose.Schema({
   },
   documents: [{
     name: String,
-    url: String, // Cloudinary or S3 URL
-    type: String // e.g., 'pdf', 'doc'
+    url: String,
+    fileType: String
   }],
   billingParameters: {
     paymentTerms: String,

@@ -12,6 +12,7 @@ exports.loginVendor = async (req, res) => {
   try {
     const vendor = await Vendor.findOne({ email });
     if (!vendor) return res.status(401).json({ message: 'Invalid email or password.' });
+    if (vendor.blacklisted) return res.status(403).json({ message: 'Your account has been suspended. Please contact the procurement team.' });
 
     // Find all rooms where this vendor has an access code
     const rooms = await BidRoom.find({ invitedVendors: vendor._id }).populate('product');
@@ -77,8 +78,10 @@ exports.getRoomDetails = async (req, res) => {
     if (!room) return res.status(404).json({ message: 'Room not found' });
     res.json({
       _id: room._id, product: room.product, basePrice: room.basePrice,
-      decrementValue: room.decrementValue, startTime: room.startTime,
-      endTime: room.endTime, status: room.status, currentLowestBid: room.currentLowestBid || room.basePrice
+      decrementValue: room.decrementValue, quantity: room.quantity, startTime: room.startTime,
+      endTime: room.endTime, status: room.status, currentLowestBid: room.currentLowestBid || (room.basePrice * room.quantity),
+      broadcasts: room.broadcasts || [],
+      extensions: room.extensions || []
     });
   } catch (error) { res.status(500).json({ message: error.message }); }
 };

@@ -27,6 +27,10 @@ const vendorSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
   },
+  blacklisted: {
+    type: Boolean,
+    default: false
+  },
   documents: [{
     name: String,
     url: String,

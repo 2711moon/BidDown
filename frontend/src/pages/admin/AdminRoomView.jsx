@@ -25,16 +25,27 @@ const AdminRoomView = () => {
   const [reopenVendors, setReopenVendors] = useState([]);
   const [allVendors, setAllVendors] = useState([]);
   const [reopenLoading, setReopenLoading] = useState(false);
+  const [participantCount, setParticipantCount] = useState(0);
+  const [presentVendors, setPresentVendors] = useState([]);
+  const [broadcastMsg, setBroadcastMsg] = useState('');
   const socketRef = useRef(null);
   const bidFeedRef = useRef(null);
 
   useEffect(() => {
+    let isActive = true;
+    let localSocket = null;
+
     const fetchAndConnect = async () => {
       try {
+        setLoading(true);
         const token = localStorage.getItem('adminToken');
-        const res = await axios.get('http://172.16.100.174:5000/api/admin/rooms/' + id, {
-          headers: { Authorization: 'Bearer ' + token }
+        if (!token) { navigate('/admin/login'); return; }
+
+        const res = await axios.get(`http://172.16.100.174:5000/api/admin/rooms/${id}`, {
+          headers: { Authorization: `Bearer ${token}` }
         });
+        if (!isActive) return;
+
         setRoom(res.data.room);
         setBids(res.data.bids || []);
         setEndTime(new Date(res.data.room.endTime));
@@ -42,7 +53,10 @@ const AdminRoomView = () => {
 
         // Connect socket as admin observer
         const socket = io('http://172.16.100.174:5000');
+        if (!isActive) { socket.disconnect(); return; }
+        
         socketRef.current = socket;
+        localSocket = socket;
 
         socket.on('connect', () => {
           socket.emit('joinRoom', { roomId: id, role: 'admin' });
@@ -57,28 +71,48 @@ const AdminRoomView = () => {
         socket.on('adminNewBid', (bid) => {
           setBids(prev => [bid, ...prev]);
           setRoom(prev => prev ? { ...prev, currentLowestBid: bid.amount, winner: bid.vendor } : prev);
-          toast.success('New bid: Rs.' + bid.amount.toLocaleString() + ' by ' + bid.vendor.companyName, { icon: 'ðŸ“‰' });
+          toast.success('New bid: Rs.' + bid.amount.toLocaleString('en-IN') + ' by ' + bid.vendor.companyName);
         });
 
-        socket.on('timeExtended', ({ newEndTime, message }) => {
+        socket.on('auctionStarted', (data) => {
+          setRoom(prev => prev ? { ...prev, status: 'active', currentLowestBid: data.currentLowestBid, endTime: data.endTime } : prev);
+          toast.success('Auction has started!', { duration: 4000 });
+        });
+
+        socket.on('timeExtended', ({ newEndTime, message, extendedBy }) => {
           setEndTime(new Date(newEndTime));
           setRoom(prev => prev ? { ...prev, endTime: newEndTime } : prev);
-          toast(message, { icon: 'â±ï¸', duration: 5000 });
+          toast(message, { duration: 5000, style: { background: '#f59e0b', color: '#fff', fontWeight: 'bold' } });
         });
 
         socket.on('auctionEnded', ({ message }) => {
           setRoom(prev => prev ? { ...prev, status: 'completed' } : prev);
           toast.success(message || 'Auction ended.');
         });
+        
+        socket.on('participantUpdate', ({ count, presentVendors }) => {
+          if (presentVendors) {
+            setParticipantCount(presentVendors.length);
+            setPresentVendors(presentVendors);
+          } else {
+            setParticipantCount(count);
+          }
+        });
 
       } catch (err) {
-        toast.error('Failed to load room details');
-        setLoading(false);
+        if (isActive) {
+          toast.error('Failed to load room details');
+          setLoading(false);
+        }
       }
     };
 
     fetchAndConnect();
-    return () => { if (socketRef.current) socketRef.current.disconnect(); };
+    return () => { 
+      isActive = false;
+      if (localSocket) localSocket.disconnect();
+      else if (socketRef.current) socketRef.current.disconnect();
+    };
   }, [id]);
 
   // Countdown timer
@@ -117,7 +151,15 @@ const AdminRoomView = () => {
     if (!mins || mins <= 0) { toast.error('Enter a valid duration'); return; }
     if (!socketRef.current) return;
     socketRef.current.emit('adminManualExtend', { roomId: id, minutes: mins });
-    toast.success('Extending auction by ' + mins + ' minutes...');
+    // Local toast removed because the socket 'timeExtended' event will toast globally
+  };
+
+  const handleBroadcast = () => {
+    if (!broadcastMsg.trim()) return;
+    if (!socketRef.current) return;
+    socketRef.current.emit('adminBroadcast', { roomId: id, message: broadcastMsg.trim() });
+    toast.success('Broadcast sent to all vendors');
+    setBroadcastMsg('');
   };
 
   const openReopenModal = async () => {
@@ -179,11 +221,11 @@ const AdminRoomView = () => {
     const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF();
     doc.setFontSize(14); doc.text('Bid History - ' + (room?.product?.name || 'Auction'), 14, 16);
-    autoTable(doc, { startY: 22, head: [['#', 'Time', 'Vendor', 'Bid Amount', 'Savings']], body: bids.map((b, i) => [i + 1, new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), b.vendor.companyName, 'Rs.' + b.amount.toLocaleString(), 'Rs.' + (room ? (room.basePrice - b.amount) : 0).toLocaleString()]), styles: { fontSize: 8 }, headStyles: { fillColor: [15, 23, 42] } });
+    autoTable(doc, { startY: 22, head: [['#', 'Time', 'Vendor', 'Bid Amount', 'Savings']], body: bids.map((b, i) => [i + 1, new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), b.vendor.companyName, 'Rs.' + b.amount.toLocaleString('en-IN'), 'Rs.' + (room ? (room.basePrice - b.amount) : 0).toLocaleString('en-IN')]), styles: { fontSize: 8 }, headStyles: { fillColor: [15, 23, 42] } });
     doc.save('bid_history_' + id.slice(-6) + '.pdf');
   };
 
-  const fmt = (d) => d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'â€”';
+  const fmt = (d) => d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '-';
   const money = (n) => 'Rs. ' + Number(n || 0).toLocaleString('en-IN');
 
   if (loading) return (
@@ -200,18 +242,20 @@ const AdminRoomView = () => {
       <div className="text-center">
         <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
         <p className="text-slate-700 font-bold">Room not found</p>
-        <button onClick={() => navigate('/admin')} className="mt-4 text-sm text-blue-600 hover:underline">â† Back to Dashboard</button>
+        <button onClick={() => navigate('/admin')} className="mt-4 text-sm text-blue-600 hover:underline">Ã¢â€ Â Back to Dashboard</button>
       </div>
     </div>
   );
 
   const isLive = room.status === 'active';
   const isDone = room.status === 'completed';
-  const savings = room.basePrice && room.currentLowestBid ? room.basePrice - room.currentLowestBid : 0;
-  const savingsPct = room.basePrice ? ((savings / room.basePrice) * 100).toFixed(1) : 0;
-  const winnerName = room.winner?.companyName || (bids[0]?.vendor?.companyName) || 'â€”';
+  const totalBasePrice = room.basePrice * (room.quantity || 1);
+  const savings = totalBasePrice && room.currentLowestBid ? totalBasePrice - room.currentLowestBid : 0;
+  const savingsPct = totalBasePrice ? ((savings / totalBasePrice) * 100).toFixed(1) : 0;
+  const winnerName = room.winner?.companyName || (bids[0]?.vendor?.companyName) || '-';
 
   return (
+    <>
     <div className="min-h-screen bg-slate-100">
 
       {/* Top Bar */}
@@ -226,11 +270,16 @@ const AdminRoomView = () => {
             <h1 className="text-lg font-black text-slate-900 leading-tight">{room.product?.name || 'Unknown Product'}</h1>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 justify-end mt-4 md:mt-0">
           {isLive && (
-            <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-ping" /> LIVE
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-ping" /> LIVE
+              </span>
+              <span className="flex items-center gap-1 text-slate-500 text-xs font-bold bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-full">
+                <Users className="w-3.5 h-3.5" /> {participantCount} online
+              </span>
+            </div>
           )}
           {isDone && (
             <span className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-500 text-xs font-bold px-3 py-1.5 rounded-full">
@@ -238,13 +287,20 @@ const AdminRoomView = () => {
             </span>
           )}
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-            <span className="text-[10px] font-bold text-slate-400 uppercase px-2">Export</span>
-            <button onClick={exportCSV} className="text-xs font-bold text-slate-600 hover:text-blue-700 bg-white hover:bg-blue-50 px-3 py-1.5 rounded transition shadow-sm">CSV</button>
-            <button onClick={exportExcel} className="text-xs font-bold text-slate-600 hover:text-emerald-700 bg-white hover:bg-emerald-50 px-3 py-1.5 rounded transition shadow-sm">Excel</button>
-            <button onClick={exportPDF} className="text-xs font-bold text-slate-600 hover:text-red-700 bg-white hover:bg-red-50 px-3 py-1.5 rounded transition shadow-sm">PDF</button>
+            <span className="text-[10px] font-bold text-slate-400 uppercase px-2 hidden sm:inline">Export</span>
+            <button onClick={exportCSV} className="text-xs font-bold text-slate-600 hover:text-blue-700 bg-white hover:bg-blue-50 px-2 sm:px-3 py-1.5 rounded transition shadow-sm">CSV</button>
+            <button onClick={exportExcel} className="text-xs font-bold text-slate-600 hover:text-emerald-700 bg-white hover:bg-emerald-50 px-2 sm:px-3 py-1.5 rounded transition shadow-sm">Excel</button>
+            <button onClick={exportPDF} className="text-xs font-bold text-slate-600 hover:text-red-700 bg-white hover:bg-red-50 px-2 sm:px-3 py-1.5 rounded transition shadow-sm">PDF</button>
           </div>
           {isLive && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Broadcast */}
+              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg">
+                <input type="text" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)} placeholder="Broadcast message..." className="text-xs bg-transparent outline-none w-24 sm:w-36 text-blue-900 placeholder-blue-300" onKeyDown={e => e.key === 'Enter' && handleBroadcast()} />
+                <button onClick={handleBroadcast} className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded transition">Send</button>
+              </div>
+
+              {/* Extend */}
               <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
                 <Timer className="w-3.5 h-3.5 text-amber-600" />
                 <span className="text-xs font-bold text-amber-700">Extend:</span>
@@ -260,6 +316,7 @@ const AdminRoomView = () => {
                   + Add
                 </button>
               </div>
+              
               <button onClick={handleEndAuction} disabled={ending}
                 className="flex items-center gap-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition disabled:opacity-60">
                 <StopCircle className="w-3.5 h-3.5" /> {ending ? 'Ending...' : 'End Auction'}
@@ -317,9 +374,10 @@ const AdminRoomView = () => {
             <div className="flex items-center gap-2 mb-4"><Package className="w-4 h-4 text-blue-500" /><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Auction Info</span></div>
             <div className="space-y-2 text-sm">
               {[
-                ['Base Price', money(room.basePrice)],
-                ['Decrement Step', money(room.decrementValue)],
+                ['Unit Base Price', money(room.basePrice)],
                 ['Quantity', room.quantity || 1],
+                ['Total Contract Value', money(room.basePrice * (room.quantity || 1))],
+                ['Decrement Step (Total)', money(room.decrementValue)],
                 ['Start', fmt(room.startTime)],
                 ['End', fmt(room.endTime)],
                 ['Status', room.status],
@@ -340,16 +398,15 @@ const AdminRoomView = () => {
               {(room.invitedVendors || []).length === 0
                 ? <p className="text-xs text-slate-400">No vendors invited.</p>
                 : (room.invitedVendors || []).map(v => {
-                    const hasBid = bids.some(b => b.vendor._id === v._id || b.vendor._id?.toString() === v._id?.toString());
-                    const isWinner = room.winner && (room.winner._id === v._id || room.winner._id?.toString() === v._id?.toString());
+                    const isPresent = presentVendors.includes(v._id || v._id?.toString());
                     return (
-                      <div key={v._id} className={'flex items-center justify-between p-2.5 rounded-lg border ' + (isWinner ? 'bg-amber-50 border-amber-200' : hasBid ? 'bg-green-50 border-green-100' : 'bg-slate-50 border-slate-100')}>
+                      <div key={v._id} className={'flex items-center justify-between p-2.5 rounded-lg border ' + (isPresent ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100')}>
                         <div>
-                          <p className="text-sm font-bold text-slate-900 flex items-center gap-1">{isWinner && <Crown className="w-3 h-3 text-amber-500" />}{v.companyName}</p>
+                          <p className="text-sm font-bold text-slate-900 flex items-center gap-1">{v.companyName}</p>
                           <p className="text-xs text-slate-400">{v.email}</p>
                         </div>
-                        <span className={'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ' + (isWinner ? 'bg-amber-100 text-amber-700' : hasBid ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-500')}>
-                          {isWinner ? 'Winner' : hasBid ? 'Bidding' : 'Invited'}
+                        <span className={'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ' + (isPresent ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600')}>
+                          {isPresent ? 'Present' : 'Absent'}
                         </span>
                       </div>
                     );
@@ -359,7 +416,7 @@ const AdminRoomView = () => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN â€” Live Bid Feed */}
+        {/* RIGHT COLUMN - Live Bid Feed */}
         <div className="lg:col-span-2">
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col" style={{ minHeight: '70vh' }}>
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
@@ -382,14 +439,13 @@ const AdminRoomView = () => {
             ) : (
               <div ref={bidFeedRef} className="flex-1 overflow-y-auto divide-y divide-slate-50">
                 {bids.map((bid, i) => {
-                  const isTop = i === 0;
+                  const isLowest = bid.amount === (room.currentLowestBid || room.basePrice);
                   return (
-                    <div key={bid._id || i}
-                      className={'flex items-center px-6 py-4 transition-all ' + (isTop ? 'bg-emerald-50' : 'hover:bg-slate-50')}>
-                      {/* Rank */}
-                      <div className={'w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 mr-4 ' + (isTop ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400')}>
-                        {i + 1}
-                      </div>
+                    <div key={bid._id || Math.random().toString()}
+                      className={'flex items-center px-6 py-4 transition-all ' + (isLowest ? 'bg-emerald-50' : 'hover:bg-slate-50')}>
+                      {/* Indicator */}
+                      <div className={'w-2 h-2 rounded-full mr-4 ' + (isLowest ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300')}></div>
+                      
                       {/* Vendor */}
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-slate-900 text-sm truncate">{bid.vendor.companyName}</p>
@@ -397,7 +453,7 @@ const AdminRoomView = () => {
                       </div>
                       {/* Amount */}
                       <div className="text-right ml-4">
-                        <p className={'text-lg font-black ' + (isTop ? 'text-emerald-700' : 'text-slate-500 line-through text-sm font-semibold')}>{money(bid.amount)}</p>
+                        <p className={'text-lg font-black ' + (isLowest ? 'text-emerald-700' : 'text-slate-500 line-through text-sm font-semibold')}>{money(bid.amount)}</p>
                         <p className="text-[10px] text-slate-400 font-medium">{new Date(bid.createdAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
                       </div>
                     </div>
@@ -450,15 +506,24 @@ const AdminRoomView = () => {
                     const wasInvited = (room.invitedVendors || []).some(iv => (iv._id || iv).toString() === v._id.toString());
                     const isSelected = reopenVendors.includes(v._id);
                     return (
-                      <div key={v._id} onClick={() => toggleReopenVendor(v._id)}
-                        className={'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ' + (isSelected ? 'bg-violet-50 border-violet-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200')}>
-                        <div className={'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ' + (isSelected ? 'bg-violet-600 border-violet-600' : 'border-slate-300')}>
+                      <div key={v._id} onClick={() => {
+                        if (v.blacklisted) {
+                          toast.error('Cannot invite a blacklisted vendor. You must unblacklist them from the Vendors tab first.', { duration: 4000 });
+                          return;
+                        }
+                        toggleReopenVendor(v._id);
+                      }}
+                        className={'flex items-center gap-3 p-3 rounded-lg border transition ' + (v.blacklisted ? 'opacity-70 bg-slate-100 border-slate-200 cursor-not-allowed' : isSelected ? 'bg-violet-50 border-violet-200 cursor-pointer' : 'bg-slate-50 border-slate-100 hover:border-slate-200 cursor-pointer')}>
+                        <div className={'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ' + (v.blacklisted ? 'border-slate-300' : isSelected ? 'bg-violet-600 border-violet-600' : 'border-slate-300')}>
                           {isSelected && <CheckCircle className="w-3 h-3 text-white" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-slate-900 truncate">{v.companyName}</p>
                           <p className="text-xs text-slate-400 truncate">{v.email}</p>
                         </div>
+                        {v.blacklisted && (
+                          <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 px-1.5 py-0.5 rounded border border-red-200 flex-shrink-0 ml-1">Blacklisted</span>
+                        )}
                         {wasInvited && (
                           <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded flex-shrink-0">Previous</span>
                         )}
@@ -486,7 +551,9 @@ const AdminRoomView = () => {
           </div>
         </div>
       )}
+    </>
   );
 };
 
 export default AdminRoomView;
+

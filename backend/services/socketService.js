@@ -5,6 +5,8 @@ const Vendor = require('../models/Vendor');
 
 // Track which sockets are admin observers: socketId -> roomId
 const adminSockets = new Map();
+// Track participant count: roomId -> Set<socketId>
+const roomParticipants = new Map();
 
 async function evaluateAutoBids(roomId, io) {
   let keepChecking = true;
@@ -17,7 +19,8 @@ async function evaluateAutoBids(roomId, io) {
     const room = await BidRoom.findById(roomId);
     if (!room || room.status !== 'active') break;
 
-    const currentLowest = room.currentLowestBid || room.basePrice;
+    const totalBasePrice = room.basePrice * (room.quantity || 1);
+    const currentLowest = room.currentLowestBid || totalBasePrice;
     const currentWinnerStr = room.winner ? room.winner.toString() : null;
 
     // Find eligible auto-bidders (not the current winner, and floor <= next bid amount)
@@ -88,7 +91,7 @@ module.exports = function(io) {
     socket.on('joinRoom', async ({ roomId, vendorId, role }) => {
       try {
         socket.join(roomId);
-        const room = await BidRoom.findById(roomId).populate('product');
+        const room = await BidRoom.findById(roomId).populate('product').populate('invitedVendors', 'companyName email');
         if (!room) { socket.emit('error', { message: 'Room not found' }); return; }
 
         if (role === 'admin') {
@@ -105,12 +108,15 @@ module.exports = function(io) {
               product: room.product,
               basePrice: room.basePrice,
               decrementValue: room.decrementValue,
+              quantity: room.quantity,
               startTime: room.startTime,
               endTime: room.endTime,
               status: room.status,
-              currentLowestBid: room.currentLowestBid || room.basePrice,
+              currentLowestBid: room.currentLowestBid || (room.basePrice * (room.quantity || 1)),
               settings: room.settings,
-              winner: room.winner
+              winner: room.winner,
+              invitedVendors: room.invitedVendors,
+              vendorAccessCodes: room.vendorAccessCodes
             },
             bids: bids.map(b => ({
               _id: b._id,
@@ -130,11 +136,45 @@ module.exports = function(io) {
             // Find if this vendor has an auto-bid
             const ab = room.autoBids.find(a => a.vendor.toString() === vendorId);
             socket.emit('auctionState', {
-              currentLowestBid: room.currentLowestBid || room.basePrice,
+              currentLowestBid: room.currentLowestBid || (room.basePrice * (room.quantity || 1)),
               endTime: room.endTime,
               status: room.status,
               myAutoBidFloor: ab ? ab.floorAmount : null
             });
+          }
+        }
+        // Track participants for this room
+        if (!roomParticipants.has(roomId)) {
+          roomParticipants.set(roomId, new Set());
+        }
+        roomParticipants.get(roomId).add(socket.id);
+        
+        // Track specific vendor IDs for presence badge
+        if (role !== 'admin' && vendorId && vendorId !== 'anonymous') {
+          if (!socket.data) socket.data = {};
+          socket.data.vendorId = vendorId;
+          socket.data.roomId = roomId;
+        }
+        
+        // Broadcast updated participant count and present vendors to admins
+        const participantsCount = roomParticipants.get(roomId).size;
+        
+        // Find all unique vendor IDs currently connected to this room
+        const presentVendors = new Set();
+        const roomSockets = io.sockets.adapter.rooms.get(roomId);
+        if (roomSockets) {
+          for (const sId of roomSockets) {
+            const s = io.sockets.sockets.get(sId);
+            if (s && s.data && s.data.vendorId) {
+              presentVendors.add(s.data.vendorId);
+            }
+          }
+        }
+        const presentVendorsArray = Array.from(presentVendors);
+
+        for (const [sId, rId] of adminSockets.entries()) {
+          if (rId === roomId) {
+            io.to(sId).emit('participantUpdate', { count: participantsCount, presentVendors: presentVendorsArray });
           }
         }
       } catch (err) { console.error('Error joining room:', err); }
@@ -157,7 +197,8 @@ module.exports = function(io) {
           return;
         }
 
-        const currentLowest = room.currentLowestBid || room.basePrice;
+        const totalBasePrice = room.basePrice * (room.quantity || 1);
+        const currentLowest = room.currentLowestBid || totalBasePrice;
         if (floor > currentLowest - room.decrementValue) {
           socket.emit('bidError', { message: 'Your floor price must be at least one decrement step lower than the current price.' });
           return;
@@ -197,7 +238,8 @@ module.exports = function(io) {
           return;
         }
 
-        const currentLowest = room.currentLowestBid || room.basePrice;
+        const totalBasePrice = room.basePrice * (room.quantity || 1);
+        const currentLowest = room.currentLowestBid || totalBasePrice;
         if (amount > currentLowest - room.decrementValue) {
           socket.emit('bidError', {
             message: 'Bid must be at least Rs.' + room.decrementValue + ' lower than the current price of Rs.' + currentLowest
@@ -220,10 +262,12 @@ module.exports = function(io) {
           const extensionMs = room.settings.softCloseMinutes * 60 * 1000;
           room.endTime = new Date(endTime.getTime() + extensionMs);
           room.settings.softCloseExecuted = true;
+          room.extensions.push({ minutes: room.settings.softCloseMinutes, reason: 'Late Bid Soft Close' });
           console.log('Soft close triggered for room ' + roomId);
           io.to(roomId).emit('timeExtended', {
             newEndTime: room.endTime,
-            message: 'Auction time extended due to a late bid!'
+            message: 'Auction time extended due to a late bid!',
+            extendedBy: room.settings.softCloseMinutes
           });
         }
 
@@ -267,11 +311,25 @@ module.exports = function(io) {
         const addMs = Number(minutes) * 60 * 1000;
         room.endTime = new Date(new Date(room.endTime).getTime() + addMs);
         room.settings.softCloseExecuted = false; // reset so soft-close can fire again if needed
+        room.extensions.push({ minutes, reason: 'Manual Admin Extension' });
         await room.save();
         const message = 'The administrator has extended the auction by ' + minutes + ' minute' + (minutes > 1 ? 's' : '') + '. New end time: ' + new Date(room.endTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
-        io.to(roomId).emit('timeExtended', { newEndTime: room.endTime, message });
+        io.to(roomId).emit('timeExtended', { newEndTime: room.endTime, message, extendedBy: minutes });
         console.log('Admin extended room ' + roomId + ' by ' + minutes + ' minutes');
       } catch (err) { console.error('adminManualExtend error:', err); }
+    });
+
+    // ── Admin: Broadcast Message ───────────────────────────────────────────
+    socket.on('adminBroadcast', async ({ roomId, message }) => {
+      try {
+        const room = await BidRoom.findById(roomId);
+        if (room) {
+          room.broadcasts.push({ message });
+          await room.save();
+        }
+      } catch (err) { console.error('adminBroadcast save error:', err); }
+      io.to(roomId).emit('broadcastReceived', { message });
+      console.log(`Admin broadcasted to room ${roomId}: ${message}`);
     });
 
     // ── Admin: Manual End Auction ──────────────────────────────────────────
@@ -287,9 +345,36 @@ module.exports = function(io) {
       } catch (err) { console.error('adminEndAuction error:', err); }
     });
 
-    socket.on('disconnect', () => {
-      adminSockets.delete(socket.id);
+    socket.on('disconnect', (reason) => {
       console.log('Socket disconnected: ' + socket.id);
+      
+      const roomId = socket.data?.roomId;
+
+      if (adminSockets.has(socket.id)) {
+        adminSockets.delete(socket.id);
+      }
+      for (const [rId, sockets] of roomParticipants.entries()) {
+        if (sockets.has(socket.id)) {
+          sockets.delete(socket.id);
+          const newCount = sockets.size;
+          
+          const presentVendors = new Set();
+          const roomSockets = io.sockets.adapter.rooms.get(rId);
+          if (roomSockets) {
+            for (const sId of roomSockets) {
+              const s = io.sockets.sockets.get(sId);
+              if (s && s.data && s.data.vendorId) {
+                presentVendors.add(s.data.vendorId);
+              }
+            }
+          }
+          const presentVendorsArray = Array.from(presentVendors);
+
+          for (const [aId, aRoom] of adminSockets.entries()) {
+            if (aRoom === rId) io.to(aId).emit('participantUpdate', { count: newCount, presentVendors: presentVendorsArray });
+          }
+        }
+      }
     });
   });
 };
