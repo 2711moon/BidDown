@@ -131,45 +131,18 @@ exports.getRooms = async (req, res) => {
 
 exports.createRoom = async (req, res) => {
   try {
-    const { basePrice, decrementValue, quantity, startTime, endTime, vendors: vendorIds } = req.body;
-    
+    const { startTime, endTime, vendors: vendorIds } = req.body;
+
     const sTime = new Date(startTime);
     const eTime = new Date(endTime);
     const now = new Date();
 
-    if (eTime <= sTime) {
-      return res.status(400).json({ message: 'Auction end time must be after the start time.' });
-    }
-    if (eTime <= now) {
-      return res.status(400).json({ message: 'Auction end time must be in the future.' });
-    }
+    if (eTime <= sTime) return res.status(400).json({ message: 'Auction end time must be after the start time.' });
+    if (eTime <= now) return res.status(400).json({ message: 'Auction end time must be in the future.' });
 
-    let { product } = req.body;
-    if (typeof product === 'string') {
-      product = JSON.parse(product);
-    }
-
-    // Handle product image (separate from documents)
-    let imageUrl = '';
-    if (req.files && req.files.productImage && req.files.productImage.length > 0) {
-      imageUrl = req.files.productImage[0].path; // Cloudinary URL
-    }
-
-    // Handle product documents
-    const documents = [];
-    if (req.files && req.files.documents && req.files.documents.length > 0) {
-      for (const file of req.files.documents) {
-        documents.push({ name: file.originalname, url: file.path, fileType: file.mimetype });
-      }
-    }
-
-    const productDoc = new (require('../models/Product'))({
-      name: product.name,
-      description: product.description || '',
-      imageUrl,
-      documents
-    });
-    const savedProduct = await productDoc.save();
+    // Parse items array from form data
+    let items = [];
+    try { items = JSON.parse(req.body.items || '[]'); } catch(e) { items = []; }
 
     const vendorList = Array.isArray(vendorIds) ? vendorIds : (typeof vendorIds === 'string' ? JSON.parse(vendorIds) : []);
 
@@ -181,26 +154,90 @@ exports.createRoom = async (req, res) => {
       vendorAccessCodes.push({ vendor: vid, hashedPassword: hashed, plainPassword: plain });
     }
 
-    const room = await BidRoom.create({
-      product: savedProduct._id,
-      basePrice: Number(basePrice),
-      decrementValue: Number(decrementValue),
-      quantity: Number(quantity) || 1,
+    // Handle file uploads
+    let uploadedFiles = {};
+    if (Array.isArray(req.files)) {
+      req.files.forEach(file => {
+        if (!uploadedFiles[file.fieldname]) uploadedFiles[file.fieldname] = [];
+        uploadedFiles[file.fieldname].push(file);
+      });
+    } else {
+      uploadedFiles = req.files || {};
+    }
+
+    const processedItems = await Promise.all(items.map(async (item, idx) => {
+      let imageUrl = '';
+      const imgKey = `item_${idx}_image`;
+      if (uploadedFiles[imgKey] && uploadedFiles[imgKey].length > 0) {
+        imageUrl = uploadedFiles[imgKey][0].path;
+      }
+
+      const docs = [];
+      const docKey = `item_${idx}_documents`;
+      if (uploadedFiles[docKey] && uploadedFiles[docKey].length > 0) {
+        for (const f of uploadedFiles[docKey]) {
+          docs.push({ name: f.originalname, url: f.path, fileType: f.mimetype });
+        }
+      }
+
+      const base = Number(item.basePrice) || 0;
+      const qty = Number(item.quantity) || 1;
+      const decrement = Number(item.decrementValue) || 0;
+      return {
+        name: item.name,
+        imageUrl,
+        documents: docs,
+        basePrice: base,
+        quantity: qty,
+        decrementValue: decrement,
+        itemTotalValue: base * qty
+      };
+    }));
+
+    const grandTotal = processedItems.reduce((sum, it) => sum + it.itemTotalValue, 0);
+
+    // For backward compat: if single item, also set legacy fields
+    const isMulti = processedItems.length > 1;
+    const firstItem = processedItems[0] || {};
+
+    const roomData = {
+      items: processedItems,
+      grandTotalContractValue: grandTotal,
       startTime,
       endTime,
       invitedVendors: vendorList,
       vendorAccessCodes,
       status: 'scheduled'
-    });
+    };
+
+    if (!isMulti && firstItem) {
+      // Single item — also populate legacy fields for backward compat
+      // Create a Product record for backward compat
+      let product = req.body.product;
+      if (typeof product === 'string') { try { product = JSON.parse(product); } catch(e) {} }
+      let imageUrl = firstItem.imageUrl;
+
+      const productDoc = new (require('../models/Product'))({
+        name: firstItem.name,
+        description: (product && product.description) || '',
+        imageUrl,
+        documents: firstItem.documents
+      });
+      const savedProduct = await productDoc.save();
+      roomData.product = savedProduct._id;
+      roomData.basePrice = firstItem.basePrice;
+      roomData.decrementValue = firstItem.decrementValue;
+      roomData.quantity = firstItem.quantity;
+    }
+
+    const room = await BidRoom.create(roomData);
 
     // Send invitation emails
     const loginUrl = (process.env.FRONTEND_URL || 'http://localhost:5173') + '/vendor/login';
-    const productName = product.name;
-
     for (const code of vendorAccessCodes) {
       const vendor = await Vendor.findById(code.vendor).select('-password');
       if (!vendor) continue;
-      await emailService.sendAuctionInvite({ vendor, room, product: productName, accessPassword: code.plainPassword, loginUrl });
+      await emailService.sendAuctionInvite({ vendor, room, items: processedItems, grandTotal, accessPassword: code.plainPassword, loginUrl });
     }
 
     res.status(201).json(room);
@@ -260,16 +297,26 @@ exports.getReports = async (req, res) => {
     const completedRooms = await BidRoom.find({ status: 'completed' }).populate('product').populate('winner', 'companyName email');
     let totalSavings = 0;
     const events = completedRooms.map(room => {
-      const totalBasePrice = room.basePrice * room.quantity;
-      const saving = totalBasePrice - (room.currentLowestBid || totalBasePrice);
+      const isMulti = room.items && room.items.length > 1;
+      const grandTotal = room.grandTotalContractValue || (room.basePrice * (room.quantity || 1));
+      const saving = grandTotal - (room.currentLowestBid || grandTotal);
       totalSavings += saving;
       return {
         room: room._id,
-        product: room.product ? room.product.name : 'Unknown',
-        basePrice: room.basePrice,
-        quantity: room.quantity,
-        totalBasePrice: totalBasePrice,
-        winningBid: room.currentLowestBid || totalBasePrice,
+        product: isMulti ? room.items.map(i => i.name).join(', ') : (room.product ? room.product.name : 'Unknown'),
+        basePrice: room.basePrice || (room.items[0] && room.items[0].basePrice) || 0,
+        quantity: room.quantity || (room.items[0] && room.items[0].quantity) || 1,
+        totalBasePrice: grandTotal,
+        grandTotalContractValue: grandTotal,
+        isMultiItem: isMulti,
+        items: isMulti ? room.items.map(it => ({
+          name: it.name,
+          basePrice: it.basePrice,
+          quantity: it.quantity,
+          decrementValue: it.decrementValue,
+          itemTotalValue: it.itemTotalValue || (it.basePrice * it.quantity)
+        })) : [],
+        winningBid: room.currentLowestBid || grandTotal,
         saving,
         winner: room.winner ? room.winner.companyName : 'No Winner',
         endTime: room.endTime,

@@ -51,6 +51,7 @@ exports.loginVendor = async (req, res) => {
     }
 
     const token = generateToken({ vendorId: vendor._id, roomId: matchedRoom._id, role: 'vendor' });
+    const grandTotal = matchedRoom.grandTotalContractValue || (matchedRoom.basePrice * (matchedRoom.quantity || 1));
 
     res.json({
       token,
@@ -58,11 +59,18 @@ exports.loginVendor = async (req, res) => {
       room: {
         _id: matchedRoom._id,
         product: matchedRoom.product,
+        items: matchedRoom.items || [],
+        grandTotalContractValue: grandTotal,
         basePrice: matchedRoom.basePrice,
         decrementValue: matchedRoom.decrementValue,
+        quantity: matchedRoom.quantity,
         startTime: matchedRoom.startTime,
         endTime: matchedRoom.endTime,
-        status: matchedRoom.status
+        status: matchedRoom.status,
+        currentLowestBid: matchedRoom.currentLowestBid || grandTotal,
+        itemLowestBids: matchedRoom.itemLowestBids || [],
+        broadcasts: matchedRoom.broadcasts || [],
+        extensions: matchedRoom.extensions || []
       },
       waitingRoom: minutesToStart > 0 && minutesToStart <= 5
     });
@@ -76,10 +84,20 @@ exports.getRoomDetails = async (req, res) => {
   try {
     const room = await BidRoom.findById(req.params.id).populate('product');
     if (!room) return res.status(404).json({ message: 'Room not found' });
+    const grandTotal = room.grandTotalContractValue || (room.basePrice * (room.quantity || 1));
     res.json({
-      _id: room._id, product: room.product, basePrice: room.basePrice,
-      decrementValue: room.decrementValue, quantity: room.quantity, startTime: room.startTime,
-      endTime: room.endTime, status: room.status, currentLowestBid: room.currentLowestBid || (room.basePrice * room.quantity),
+      _id: room._id,
+      product: room.product,
+      items: room.items || [],
+      grandTotalContractValue: grandTotal,
+      basePrice: room.basePrice,
+      decrementValue: room.decrementValue,
+      quantity: room.quantity,
+      startTime: room.startTime,
+      endTime: room.endTime,
+      status: room.status,
+      currentLowestBid: room.currentLowestBid || grandTotal,
+      itemLowestBids: room.itemLowestBids || [],
       broadcasts: room.broadcasts || [],
       extensions: room.extensions || []
     });

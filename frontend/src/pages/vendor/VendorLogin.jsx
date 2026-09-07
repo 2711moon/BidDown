@@ -20,7 +20,7 @@ const VendorLogin = () => {
     try {
       // Try admin login first
       try {
-        const adminRes = await axios.post('http://172.16.100.174:5000/api/admin/login', {
+        const adminRes = await axios.post('http://localhost:5000/api/admin/login', {
           username: formData.email, password: formData.password
         });
         localStorage.setItem('adminToken', adminRes.data.token);
@@ -30,7 +30,7 @@ const VendorLogin = () => {
       } catch { /* not admin, try vendor */ }
 
       // Vendor auction login
-      const res = await axios.post('http://172.16.100.174:5000/api/vendor/login', formData);
+      const res = await axios.post('http://localhost:5000/api/vendor/login', formData);
       localStorage.setItem('vendorToken', res.data.token);
       localStorage.setItem('vendorId', res.data.vendor._id);
 
@@ -125,4 +125,5 @@ const VendorLogin = () => {
 };
 
 export default VendorLogin;
+
 

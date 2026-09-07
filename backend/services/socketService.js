@@ -106,13 +106,16 @@ module.exports = function(io) {
             room: {
               _id: room._id,
               product: room.product,
+              items: room.items || [],
+              grandTotalContractValue: room.grandTotalContractValue || (room.basePrice * (room.quantity || 1)),
               basePrice: room.basePrice,
               decrementValue: room.decrementValue,
               quantity: room.quantity,
               startTime: room.startTime,
               endTime: room.endTime,
               status: room.status,
-              currentLowestBid: room.currentLowestBid || (room.basePrice * (room.quantity || 1)),
+              currentLowestBid: room.currentLowestBid || room.grandTotalContractValue || (room.basePrice * (room.quantity || 1)),
+              itemLowestBids: room.itemLowestBids || [],
               settings: room.settings,
               winner: room.winner,
               invitedVendors: room.invitedVendors,
@@ -122,6 +125,7 @@ module.exports = function(io) {
               _id: b._id,
               vendor: b.vendor ? { _id: b.vendor._id, companyName: b.vendor.companyName, email: b.vendor.email } : { companyName: 'Unknown' },
               amount: b.amount,
+              itemBids: b.itemBids || [],
               createdAt: b.createdAt,
               isAutoBid: b.isAutoBid
             }))
@@ -133,13 +137,16 @@ module.exports = function(io) {
           if (now < startTime) {
             socket.emit('waitingRoom', { message: 'Waiting for auction to start', startTime: room.startTime });
           } else {
-            // Find if this vendor has an auto-bid
-            const ab = room.autoBids.find(a => a.vendor.toString() === vendorId);
+            const grandTotal = room.grandTotalContractValue || (room.basePrice * (room.quantity || 1));
             socket.emit('auctionState', {
-              currentLowestBid: room.currentLowestBid || (room.basePrice * (room.quantity || 1)),
+              currentLowestBid: room.currentLowestBid || grandTotal,
+              grandTotalContractValue: grandTotal,
+              items: room.items || [],
+              itemLowestBids: room.itemLowestBids || [],
               endTime: room.endTime,
               status: room.status,
-              myAutoBidFloor: ab ? ab.floorAmount : null
+              decrementValue: room.decrementValue,
+              myAutoBidFloor: null
             });
           }
         }
@@ -224,7 +231,7 @@ module.exports = function(io) {
     });
 
     // ── Place Bid ──────────────────────────────────────────────────────────
-    socket.on('placeBid', async ({ roomId, vendorId, amount }) => {
+    socket.on('placeBid', async ({ roomId, vendorId, amount, itemBids }) => {
       try {
         const room = await BidRoom.findById(roomId);
         if (!room) return;
@@ -238,21 +245,58 @@ module.exports = function(io) {
           return;
         }
 
-        const totalBasePrice = room.basePrice * (room.quantity || 1);
-        const currentLowest = room.currentLowestBid || totalBasePrice;
-        if (amount > currentLowest - room.decrementValue) {
-          socket.emit('bidError', {
-            message: 'Bid must be at least Rs.' + room.decrementValue + ' lower than the current price of Rs.' + currentLowest
-          });
-          return;
+        const isMulti = room.items && room.items.length > 1;
+        const grandTotal = room.grandTotalContractValue || (room.basePrice * (room.quantity || 1));
+        const currentLowest = room.currentLowestBid || grandTotal;
+
+        // Validate grand total amount
+        const bidAmount = Number(amount);
+        if (isNaN(bidAmount) || bidAmount <= 0) {
+          socket.emit('bidError', { message: 'Invalid bid amount.' }); return;
+        }
+        if (bidAmount >= currentLowest) {
+          socket.emit('bidError', { message: 'Your bid must be lower than the current market price of Rs.' + currentLowest.toLocaleString('en-IN') }); return;
+        }
+
+        // For multi-item: validate itemBids sum matches grand total bid
+        let validatedItemBids = [];
+        if (isMulti && itemBids && itemBids.length > 0) {
+          const itemSum = itemBids.reduce((s, ib) => s + Number(ib.amount || 0), 0);
+          if (Math.abs(itemSum - bidAmount) > 1) { // allow ₹1 rounding tolerance
+            socket.emit('bidError', { message: 'Sum of item bids (Rs.' + itemSum.toLocaleString('en-IN') + ') must equal your grand total bid (Rs.' + bidAmount.toLocaleString('en-IN') + ').' });
+            return;
+          }
+          // Validate each item amount doesn't exceed its base price
+          for (const ib of itemBids) {
+            const item = room.items.find(it => it._id.toString() === ib.itemId);
+            if (item && Number(ib.amount) > item.itemTotalValue) {
+              socket.emit('bidError', { message: `Bid for "${item.name}" cannot exceed its contract value of Rs.${item.itemTotalValue.toLocaleString('en-IN')}.` });
+              return;
+            }
+          }
+          validatedItemBids = itemBids.map(ib => ({
+            itemId: ib.itemId,
+            itemName: ib.itemName || '',
+            amount: Number(ib.amount)
+          }));
+
+          // Update per-item lowest bids
+          for (const ib of validatedItemBids) {
+            const existing = room.itemLowestBids.find(ilb => ilb.itemId.toString() === ib.itemId);
+            if (existing) {
+              if (ib.amount < existing.amount) existing.amount = ib.amount;
+            } else {
+              room.itemLowestBids.push({ itemId: ib.itemId, amount: ib.amount });
+            }
+          }
         }
 
         // Save bid
-        const newBid = new Bid({ room: roomId, vendor: vendorId, amount });
+        const newBid = new Bid({ room: roomId, vendor: vendorId, amount: bidAmount, itemBids: validatedItemBids });
         await newBid.save();
 
         // Update room
-        room.currentLowestBid = amount;
+        room.currentLowestBid = bidAmount;
         room.winner = vendorId;
 
         // Soft close
@@ -263,7 +307,6 @@ module.exports = function(io) {
           room.endTime = new Date(endTime.getTime() + extensionMs);
           room.settings.softCloseExecuted = true;
           room.extensions.push({ minutes: room.settings.softCloseMinutes, reason: 'Late Bid Soft Close' });
-          console.log('Soft close triggered for room ' + roomId);
           io.to(roomId).emit('timeExtended', {
             newEndTime: room.endTime,
             message: 'Auction time extended due to a late bid!',
@@ -276,26 +319,20 @@ module.exports = function(io) {
         // Fetch vendor details for admin broadcast
         const vendor = await Vendor.findById(vendorId).select('companyName email');
 
-        // To vendors: anonymous price only
-        // To admin: full details
         const sockets = await io.in(roomId).fetchSockets();
         for (const s of sockets) {
           if (adminSockets.get(s.id) === roomId) {
-            // Admin socket
             s.emit('adminNewBid', {
               _id: newBid._id,
               vendor: vendor ? { _id: vendor._id, companyName: vendor.companyName, email: vendor.email } : { companyName: 'Unknown' },
-              amount,
+              amount: bidAmount,
+              itemBids: validatedItemBids,
               createdAt: newBid.createdAt
             });
           } else {
-            // Vendor socket
-            s.emit('newLowestBid', { amount });
+            s.emit('newLowestBid', { amount: bidAmount, itemLowestBids: room.itemLowestBids });
           }
         }
-
-        // Now trigger auto-bid evaluation!
-        await evaluateAutoBids(roomId, io);
 
       } catch (err) {
         console.error('Error placing bid:', err);

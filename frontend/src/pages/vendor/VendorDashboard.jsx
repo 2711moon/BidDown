@@ -18,7 +18,7 @@ const VendorDashboard = () => {
       }
       
       try {
-        const res = await axios.get(`http://172.16.100.174:5000/api/vendor/dashboard?vendorId=${vendorId}`);
+        const res = await axios.get(`http://localhost:5000/api/vendor/dashboard?vendorId=${vendorId}`);
         setRooms(res.data);
       } catch (err) {
         toast.error('Failed to load your dashboard');
@@ -87,13 +87,13 @@ const VendorDashboard = () => {
                     </div>
                     
                     <h3 className="font-bold text-xl text-slate-900 dark:text-white mb-2 line-clamp-1">
-                      {room.product?.name || 'Unknown Product'}
+                      {room.items && room.items.length > 1 ? `Basket of ${room.items.length} Items` : (room.product?.name || 'Unknown Product')}
                     </h3>
                     
                     <div className="mt-4 space-y-3 mb-8">
                       <div className="flex justify-between items-center text-sm">
-                        <span className="text-slate-500 dark:text-zinc-400">Opening Price</span>
-                        <span className="font-bold text-slate-700 dark:text-zinc-300">Rs.{(room.basePrice * (room.quantity || 1)).toLocaleString('en-IN')}</span>
+                        <span className="text-slate-500 dark:text-zinc-400">Total Contract Value</span>
+                        <span className="font-bold text-slate-700 dark:text-zinc-300">Rs.{(room.grandTotalContractValue || (room.basePrice * (room.quantity || 1))).toLocaleString('en-IN')}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-500 dark:text-zinc-400">Scheduled Time</span>
@@ -126,3 +126,4 @@ const VendorDashboard = () => {
 };
 
 export default VendorDashboard;
+

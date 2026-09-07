@@ -23,23 +23,50 @@ const fmt = (d) => new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata
 const dur = (s, e) => { const ms = new Date(e)-new Date(s); const h=Math.floor(ms/3600000),m=Math.floor((ms%3600000)/60000); return h>0?h+'h '+m+'m':m+' minutes'; };
 const money = (n) => 'Rs. ' + Number(n).toLocaleString('en-IN');
 
-exports.sendAuctionInvite = async ({ vendor, room, product, accessPassword, loginUrl }) => {
+exports.sendAuctionInvite = async ({ vendor, room, product, items, grandTotal, accessPassword, loginUrl }) => {
+  const isMulti = items && items.length > 1;
+  const totalValue = grandTotal || (room.grandTotalContractValue) || (room.basePrice * (room.quantity || 1));
+
+  // Build item rows for multi-item auctions
+  const itemRows = isMulti ? items.map(it =>
+    '<tr style="border-top:1px solid #e5e7eb">'
+    + '<td style="padding:6px 4px;font-size:13px">' + it.name + '</td>'
+    + '<td style="padding:6px 4px;font-size:13px;text-align:center">' + it.quantity + '</td>'
+    + '<td style="padding:6px 4px;font-size:13px;text-align:right">' + money(it.basePrice) + '</td>'
+    + '<td style="padding:6px 4px;font-size:13px;text-align:right;font-weight:700">' + money(it.itemTotalValue || it.basePrice * it.quantity) + '</td>'
+    + '</tr>'
+  ).join('') : '';
+
+  const itemsSection = isMulti
+    ? '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0">'
+      + '<h3 style="margin:0 0 10px;font-size:14px;color:#111">Items in this Auction</h3>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+      + '<thead><tr style="background:#111827;color:#fff"><th style="padding:6px 4px;text-align:left">Item</th><th style="padding:6px 4px;text-align:center">Qty</th><th style="padding:6px 4px;text-align:right">Unit Price</th><th style="padding:6px 4px;text-align:right">Item Total</th></tr></thead>'
+      + '<tbody>' + itemRows + '</tbody>'
+      + '<tfoot><tr style="background:#f0fdf4"><td colspan="3" style="padding:8px 4px;font-weight:900;text-align:right">Grand Total Contract Value</td><td style="padding:8px 4px;font-weight:900;color:#166534;text-align:right">' + money(totalValue) + '</td></tr></tfoot>'
+      + '</table></div>'
+    : '';
+
+  const singleProductLine = !isMulti
+    ? '<p style="color:#374151;font-size:15px">You have been invited to a reverse auction to supply a total quantity of <strong>' + (room.quantity || (items && items[0] && items[0].quantity) || 1) + ' ' + (product || (items && items[0] && items[0].name) || 'item') + '(s)</strong>.</p>'
+    : '<p style="color:#374151;font-size:15px">You have been invited to a reverse auction for a <strong>basket of ' + items.length + ' items</strong>. You must place bids for all items. The vendor with the lowest <strong>Grand Total</strong> wins.</p>';
+
   const html = '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif">'
-    + '<div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden">'
+    + '<div style="max-width:620px;margin:32px auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden">'
     + '<div style="background:#111827;padding:28px 32px"><h1 style="color:#fff;margin:0;font-size:22px;font-weight:900">BID ON — Auction Invitation</h1></div>'
     + '<div style="padding:32px">'
     + '<p style="color:#374151;font-size:15px">Dear <strong>' + vendor.contactPerson + '</strong>,</p>'
-    + '<p style="color:#374151;font-size:15px">You have been invited to a reverse auction to supply a total quantity of <strong>' + room.quantity + ' ' + product + '(s)</strong>.</p>'
+    + singleProductLine
+    + itemsSection
     + '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:20px;margin:20px 0">'
     + '<h2 style="margin:0 0 14px;font-size:15px;color:#111">Auction Details</h2>'
     + '<table style="width:100%;font-size:14px;color:#374151;border-collapse:collapse">'
-    + '<tr><td style="padding:5px 0;font-weight:700;width:140px">Product</td><td>' + product + '</td></tr>'
-    + '<tr><td style="padding:5px 0;font-weight:700">Start Time</td><td>' + fmt(room.startTime) + '</td></tr>'
+    + '<tr><td style="padding:5px 0;font-weight:700;width:160px">Start Time</td><td>' + fmt(room.startTime) + '</td></tr>'
     + '<tr><td style="padding:5px 0;font-weight:700">End Time</td><td>' + fmt(room.endTime) + '</td></tr>'
     + '<tr><td style="padding:5px 0;font-weight:700">Duration</td><td>' + dur(room.startTime, room.endTime) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;font-weight:700">Quantity</td><td>' + room.quantity + '</td></tr>'
-    + '<tr><td style="padding:5px 0;font-weight:700">Base Price (Unit)</td><td>' + money(room.basePrice) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;font-weight:900;color:#111">Total Contract Value</td><td style="font-weight:900;color:#111">' + money(room.basePrice * room.quantity) + '</td></tr>'
+    + (!isMulti ? '<tr><td style="padding:5px 0;font-weight:700">Quantity</td><td>' + (room.quantity || 1) + '</td></tr>' : '')
+    + (!isMulti ? '<tr><td style="padding:5px 0;font-weight:700">Base Price (Unit)</td><td>' + money(room.basePrice || (items && items[0] && items[0].basePrice) || 0) + '</td></tr>' : '')
+    + '<tr><td style="padding:5px 0;font-weight:900;color:#111">Total Contract Value</td><td style="font-weight:900;color:#111">' + money(totalValue) + '</td></tr>'
     + '</table></div>'
     + '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;margin:20px 0">'
     + '<h2 style="margin:0 0 14px;font-size:15px;color:#166534">Your Login Credentials</h2>'
@@ -47,7 +74,6 @@ exports.sendAuctionInvite = async ({ vendor, room, product, accessPassword, logi
     + '<tr><td style="padding:5px 0;font-weight:700;width:140px">Company</td><td>' + vendor.companyName + '</td></tr>'
     + '<tr><td style="padding:5px 0;font-weight:700">Contact Person</td><td>' + vendor.contactPerson + '</td></tr>'
     + '<tr><td style="padding:5px 0;font-weight:700">Email</td><td>' + vendor.email + '</td></tr>'
-    + '<tr><td style="padding:5px 0;font-weight:700">Phone</td><td>' + vendor.phone + '</td></tr>'
     + '<tr><td style="padding:5px 0;font-weight:700">Password</td><td><span style="font-family:monospace;font-size:22px;font-weight:900;color:#166534;letter-spacing:5px;background:#dcfce7;padding:4px 12px;border-radius:4px">' + accessPassword + '</span></td></tr>'
     + '</table></div>'
     + '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 18px;margin:20px 0;font-size:13px;color:#92400e">'
@@ -57,7 +83,8 @@ exports.sendAuctionInvite = async ({ vendor, room, product, accessPassword, logi
     + '<hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0">'
     + '<p style="color:#6b7280;font-size:13px;margin:0">Regards,<br><strong>BID ON Procurement Team</strong></p>'
     + '</div></div></body></html>';
-  await send(vendor.email, 'Auction Invitation - ' + product, html);
+  const subject = isMulti ? 'Auction Invitation — Basket of ' + items.length + ' Items' : 'Auction Invitation - ' + (product || (items && items[0] && items[0].name));
+  await send(vendor.email, subject, html);
 };
 
 exports.sendAuctionReminder = async ({ vendor, room, product, accessPassword, loginUrl }) => {

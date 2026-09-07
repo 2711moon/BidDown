@@ -41,7 +41,7 @@ const AdminRoomView = () => {
         const token = localStorage.getItem('adminToken');
         if (!token) { navigate('/admin/login'); return; }
 
-        const res = await axios.get(`http://172.16.100.174:5000/api/admin/rooms/${id}`, {
+        const res = await axios.get(`http://localhost:5000/api/admin/rooms/${id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (!isActive) return;
@@ -52,7 +52,7 @@ const AdminRoomView = () => {
         setLoading(false);
 
         // Connect socket as admin observer
-        const socket = io('http://172.16.100.174:5000');
+        const socket = io('http://localhost:5000');
         if (!isActive) { socket.disconnect(); return; }
         
         socketRef.current = socket;
@@ -135,7 +135,7 @@ const AdminRoomView = () => {
     setEnding(true);
     try {
       const token = localStorage.getItem('adminToken');
-      await axios.post('http://172.16.100.174:5000/api/admin/rooms/' + id + '/end', {}, {
+      await axios.post('http://localhost:5000/api/admin/rooms/' + id + '/end', {}, {
         headers: { Authorization: 'Bearer ' + token }
       });
       if (socketRef.current) socketRef.current.emit('adminEndAuction', { roomId: id });
@@ -165,7 +165,7 @@ const AdminRoomView = () => {
   const openReopenModal = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const res = await axios.get('http://172.16.100.174:5000/api/admin/vendors', {
+      const res = await axios.get('http://localhost:5000/api/admin/vendors', {
         headers: { Authorization: 'Bearer ' + token }
       });
       setAllVendors(res.data);
@@ -183,13 +183,13 @@ const AdminRoomView = () => {
       const existingIds = (room.invitedVendors || []).map(v => (v._id || v).toString());
       const retainedVendorIds = reopenVendors.filter(vid => existingIds.includes(vid.toString()));
       const newVendorIds = reopenVendors.filter(vid => !existingIds.includes(vid.toString()));
-      await axios.post('http://172.16.100.174:5000/api/admin/rooms/' + id + '/reopen',
+      await axios.post('http://localhost:5000/api/admin/rooms/' + id + '/reopen',
         { durationMinutes: Number(reopenDuration), retainedVendorIds, newVendorIds },
         { headers: { Authorization: 'Bearer ' + token } }
       );
       toast.success('Auction re-opened! Emails sent to all vendors.');
       setShowReopenModal(false);
-      const res2 = await axios.get('http://172.16.100.174:5000/api/admin/rooms/' + id, {
+      const res2 = await axios.get('http://localhost:5000/api/admin/rooms/' + id, {
         headers: { Authorization: 'Bearer ' + token }
       });
       setRoom(res2.data.room);
@@ -205,13 +205,47 @@ const AdminRoomView = () => {
   };
 
   const exportCSV = () => {
-    const rows = [['#', 'Time', 'Vendor', 'Email', 'Bid Amount (Rs.)', 'Savings from Base (Rs.)'], ...bids.map((b, i) => [i + 1, new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), b.vendor.companyName, b.vendor.email || '', b.amount, room ? (room.basePrice - b.amount) : ''])];
+    const rows = [['#', 'Time', 'Vendor', 'Email', 'Item Name', 'Bid Amount (Rs.)', 'Savings from Base (Rs.)']];
+    let rowIdx = 1;
+    bids.forEach(b => {
+      const time = new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const vName = b.vendor.companyName;
+      const vEmail = b.vendor.email || '';
+      if (room.items && room.items.length > 1 && b.itemBids && b.itemBids.length > 0) {
+        b.itemBids.forEach(ib => {
+          const matchedItem = room.items.find(ri => ri.name === ib.itemName);
+          const itemBase = matchedItem ? (matchedItem.basePrice * matchedItem.quantity) : 0;
+          rows.push([rowIdx++, time, vName, vEmail, ib.itemName, ib.amount, itemBase ? (itemBase - ib.amount) : '']);
+        });
+        rows.push(['', '', '', '', 'GRAND TOTAL', b.amount, room.grandTotalContractValue ? (room.grandTotalContractValue - b.amount) : '']);
+      } else {
+        const itemBase = room.grandTotalContractValue || (room.basePrice * (room.quantity || 1));
+        rows.push([rowIdx++, time, vName, vEmail, room.product?.name || 'Item', b.amount, itemBase ? (itemBase - b.amount) : '']);
+      }
+    });
     const csv = 'data:text/csv;charset=utf-8,' + rows.map(r => r.join(',')).join('\n');
     const a = document.createElement('a'); a.href = encodeURI(csv); a.download = 'bid_history_' + id.slice(-6) + '.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
   const exportExcel = async () => {
     const XLSX = await import('xlsx');
-    const data = bids.map((b, i) => ({ '#': i + 1, 'Time': new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 'Vendor': b.vendor.companyName, 'Email': b.vendor.email || '', 'Bid Amount (Rs.)': b.amount, 'Savings from Base (Rs.)': room ? (room.basePrice - b.amount) : '' }));
+    const data = [];
+    let rowIdx = 1;
+    bids.forEach(b => {
+      const time = new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const vName = b.vendor.companyName;
+      const vEmail = b.vendor.email || '';
+      if (room.items && room.items.length > 1 && b.itemBids && b.itemBids.length > 0) {
+        b.itemBids.forEach(ib => {
+          const matchedItem = room.items.find(ri => ri.name === ib.itemName);
+          const itemBase = matchedItem ? (matchedItem.basePrice * matchedItem.quantity) : 0;
+          data.push({ '#': rowIdx++, 'Time': time, 'Vendor': vName, 'Email': vEmail, 'Item': ib.itemName, 'Bid Amount (Rs.)': ib.amount, 'Savings from Base (Rs.)': itemBase ? (itemBase - ib.amount) : '' });
+        });
+        data.push({ '#': '', 'Time': '', 'Vendor': '', 'Email': '', 'Item': 'GRAND TOTAL', 'Bid Amount (Rs.)': b.amount, 'Savings from Base (Rs.)': room.grandTotalContractValue ? (room.grandTotalContractValue - b.amount) : '' });
+      } else {
+        const itemBase = room.grandTotalContractValue || (room.basePrice * (room.quantity || 1));
+        data.push({ '#': rowIdx++, 'Time': time, 'Vendor': vName, 'Email': vEmail, 'Item': room.product?.name || 'Item', 'Bid Amount (Rs.)': b.amount, 'Savings from Base (Rs.)': itemBase ? (itemBase - b.amount) : '' });
+      }
+    });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Bid History');
     XLSX.writeFile(wb, 'bid_history_' + id.slice(-6) + '.xlsx');
@@ -220,8 +254,29 @@ const AdminRoomView = () => {
     const { default: jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF();
-    doc.setFontSize(14); doc.text('Bid History - ' + (room?.product?.name || 'Auction'), 14, 16);
-    autoTable(doc, { startY: 22, head: [['#', 'Time', 'Vendor', 'Bid Amount', 'Savings']], body: bids.map((b, i) => [i + 1, new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), b.vendor.companyName, 'Rs.' + b.amount.toLocaleString('en-IN'), 'Rs.' + (room ? (room.basePrice - b.amount) : 0).toLocaleString('en-IN')]), styles: { fontSize: 8 }, headStyles: { fillColor: [15, 23, 42] } });
+    doc.setFontSize(14); 
+    const isMulti = room.items && room.items.length > 1;
+    doc.text('Bid History - ' + (isMulti ? `Basket of ${room.items.length} Items` : (room?.product?.name || 'Auction')), 14, 16);
+    
+    const rows = [];
+    let rowIdx = 1;
+    bids.forEach(b => {
+      const time = new Date(b.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const vName = b.vendor.companyName;
+      if (room.items && room.items.length > 1 && b.itemBids && b.itemBids.length > 0) {
+        b.itemBids.forEach(ib => {
+          const matchedItem = room.items.find(ri => ri.name === ib.itemName);
+          const itemBase = matchedItem ? (matchedItem.basePrice * matchedItem.quantity) : 0;
+          rows.push([rowIdx++, time, vName, ib.itemName, 'Rs.' + ib.amount.toLocaleString('en-IN'), itemBase ? 'Rs.' + (itemBase - ib.amount).toLocaleString('en-IN') : '']);
+        });
+        rows.push(['', '', '', 'GRAND TOTAL', 'Rs.' + b.amount.toLocaleString('en-IN'), room.grandTotalContractValue ? 'Rs.' + (room.grandTotalContractValue - b.amount).toLocaleString('en-IN') : '']);
+      } else {
+        const itemBase = room.grandTotalContractValue || (room.basePrice * (room.quantity || 1));
+        rows.push([rowIdx++, time, vName, room.product?.name || 'Item', 'Rs.' + b.amount.toLocaleString('en-IN'), itemBase ? 'Rs.' + (itemBase - b.amount).toLocaleString('en-IN') : '']);
+      }
+    });
+
+    autoTable(doc, { startY: 22, head: [['#', 'Time', 'Vendor', 'Item', 'Bid Amount', 'Savings']], body: rows, styles: { fontSize: 8 }, headStyles: { fillColor: [15, 23, 42] } });
     doc.save('bid_history_' + id.slice(-6) + '.pdf');
   };
 
@@ -362,22 +417,13 @@ const AdminRoomView = () => {
             )}
           </div>
 
-          {/* Product Image */}
-          {room.product?.imageUrl && (
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-              <img src={room.product.imageUrl} alt={room.product?.name} className="w-full object-cover max-h-52" />
-            </div>
-          )}
-
           {/* Auction details */}
           <div className="bg-white border border-slate-200 rounded-xl p-5">
             <div className="flex items-center gap-2 mb-4"><Package className="w-4 h-4 text-blue-500" /><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Auction Info</span></div>
             <div className="space-y-2 text-sm">
               {[
-                ['Unit Base Price', money(room.basePrice)],
-                ['Quantity', room.quantity || 1],
-                ['Total Contract Value', money(room.basePrice * (room.quantity || 1))],
-                ['Decrement Step (Total)', money(room.decrementValue)],
+                ['Grand Total Contract Value', room.grandTotalContractValue ? money(room.grandTotalContractValue) : money(room.basePrice * (room.quantity || 1))],
+                ['Decrement Step', room.items && room.items.length > 1 ? 'Variable per item' : money(room.decrementValue)],
                 ['Start', fmt(room.startTime)],
                 ['End', fmt(room.endTime)],
                 ['Status', room.status],
@@ -389,6 +435,36 @@ const AdminRoomView = () => {
                 </div>
               ))}
             </div>
+            
+            {room.items && room.items.length > 1 ? (
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Basket Items ({room.items.length})</p>
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {room.items.map((it, idx) => (
+                    <div key={idx} className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 flex justify-between items-center">
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">{it.name}</p>
+                        <p className="text-[10px] text-slate-500">Qty: {it.quantity} | Drop: {money(it.decrementValue)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-bold text-blue-700">{money(it.basePrice * it.quantity)}</p>
+                        <p className="text-[9px] text-slate-400 uppercase">Base total</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 pt-4 border-t border-slate-100 space-y-2 text-sm">
+                <div className="flex justify-between py-1 border-b border-slate-50"><span className="text-slate-400 font-semibold">Unit Base Price</span><span className="font-bold text-slate-900">{money(room.basePrice)}</span></div>
+                <div className="flex justify-between py-1 border-b border-slate-50"><span className="text-slate-400 font-semibold">Quantity</span><span className="font-bold text-slate-900">{room.quantity || 1}</span></div>
+                {room.product?.imageUrl && (
+                  <div className="mt-2 rounded-lg overflow-hidden border border-slate-200">
+                    <img src={room.product.imageUrl} alt={room.product?.name} className="w-full object-cover max-h-32" />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Invited vendors */}
@@ -439,23 +515,43 @@ const AdminRoomView = () => {
             ) : (
               <div ref={bidFeedRef} className="flex-1 overflow-y-auto divide-y divide-slate-50">
                 {bids.map((bid, i) => {
-                  const isLowest = bid.amount === (room.currentLowestBid || room.basePrice);
+                  const isLowest = bid.amount === (room.currentLowestBid || (room.grandTotalContractValue || room.basePrice * (room.quantity||1)));
                   return (
-                    <div key={bid._id || Math.random().toString()}
-                      className={'flex items-center px-6 py-4 transition-all ' + (isLowest ? 'bg-emerald-50' : 'hover:bg-slate-50')}>
-                      {/* Indicator */}
-                      <div className={'w-2 h-2 rounded-full mr-4 ' + (isLowest ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300')}></div>
+                    <div key={bid._id || Math.random().toString()} className={'flex flex-col px-6 py-4 transition-all border-b border-slate-50 last:border-0 ' + (isLowest ? 'bg-emerald-50' : 'hover:bg-slate-50')}>
+                      <div className="flex items-center">
+                        {/* Indicator */}
+                        <div className={'w-2 h-2 rounded-full mr-4 shrink-0 ' + (isLowest ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300')}></div>
+                        
+                        {/* Vendor */}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-900 text-sm truncate">{bid.vendor.companyName}</p>
+                          <p className="text-xs text-slate-400 truncate">{bid.vendor.email}</p>
+                        </div>
+                        {/* Amount */}
+                        <div className="text-right ml-4">
+                          <p className={'text-lg font-black ' + (isLowest ? 'text-emerald-700' : 'text-slate-500 line-through text-sm font-semibold')}>{money(bid.amount)}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{new Date(bid.createdAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+                        </div>
+                      </div>
                       
-                      {/* Vendor */}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-slate-900 text-sm truncate">{bid.vendor.companyName}</p>
-                        <p className="text-xs text-slate-400 truncate">{bid.vendor.email}</p>
-                      </div>
-                      {/* Amount */}
-                      <div className="text-right ml-4">
-                        <p className={'text-lg font-black ' + (isLowest ? 'text-emerald-700' : 'text-slate-500 line-through text-sm font-semibold')}>{money(bid.amount)}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">{new Date(bid.createdAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
-                      </div>
+                      {/* Item Breakdown (if multi-item) */}
+                      {room.items && room.items.length > 1 && bid.itemBids && bid.itemBids.length > 0 && (
+                        <div className="mt-3 ml-6 pl-4 border-l-2 border-slate-200/60">
+                          <details className="group">
+                            <summary className="text-[10px] font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-slate-600 transition list-none select-none flex items-center gap-1">
+                              <span className="group-open:hidden">▶</span><span className="hidden group-open:inline">▼</span> View Item Breakdown
+                            </summary>
+                            <div className="mt-2 space-y-1.5">
+                              {bid.itemBids.map((ib, idx) => (
+                                <div key={idx} className="flex justify-between items-center bg-white border border-slate-100 rounded p-1.5 shadow-sm">
+                                  <span className="text-xs font-bold text-slate-700 truncate mr-2">{ib.itemName}</span>
+                                  <span className="text-xs font-black text-slate-900 shrink-0">{money(ib.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -556,4 +652,5 @@ const AdminRoomView = () => {
 };
 
 export default AdminRoomView;
+
 
