@@ -87,7 +87,7 @@ const VendorDashboard = () => {
                     </div>
                     
                     <h3 className="font-bold text-xl text-slate-900 dark:text-white mb-2 line-clamp-1">
-                      {room.items && room.items.length > 1 ? `Basket of ${room.items.length} Items` : (room.product?.name || 'Unknown Product')}
+                      {room.auctionName || (room.items && room.items.length > 1 ? `Basket of ${room.items.length} Items` : (room.items?.[0]?.name || room.product?.name || 'Unknown Product'))}
                     </h3>
                     
                     <div className="mt-4 space-y-3 mb-8">

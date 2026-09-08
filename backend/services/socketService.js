@@ -280,13 +280,18 @@ module.exports = function(io) {
             amount: Number(ib.amount)
           }));
 
-          // Update per-item lowest bids
+          // Update per-item lowest bids — match by itemId OR itemName as fallback
           for (const ib of validatedItemBids) {
-            const existing = room.itemLowestBids.find(ilb => ilb.itemId.toString() === ib.itemId);
+            const existing = room.itemLowestBids.find(ilb =>
+              ilb.itemId?.toString() === ib.itemId?.toString() ||
+              ilb.itemName === ib.itemName
+            );
             if (existing) {
-              if (ib.amount < existing.amount) existing.amount = ib.amount;
+              // Always update to the submitted amount (grand total already validated lower)
+              existing.amount = ib.amount;
+              if (ib.itemName) existing.itemName = ib.itemName;
             } else {
-              room.itemLowestBids.push({ itemId: ib.itemId, amount: ib.amount });
+              room.itemLowestBids.push({ itemId: ib.itemId, itemName: ib.itemName, amount: ib.amount });
             }
           }
         }
@@ -330,7 +335,11 @@ module.exports = function(io) {
               createdAt: newBid.createdAt
             });
           } else {
-            s.emit('newLowestBid', { amount: bidAmount, itemLowestBids: room.itemLowestBids });
+            s.emit('newLowestBid', {
+              amount: bidAmount,
+              itemBids: validatedItemBids,          // frontend reads this for input values
+              itemLowestBids: room.itemLowestBids   // frontend reads this for "current lowest" display
+            });
           }
         }
 

@@ -50,7 +50,7 @@ const BiddingRoom = () => {
           setExtensionNotice(`Auction extended by ${latestExt.minutes} minute${latestExt.minutes > 1 ? 's' : ''}`);
         }
       } catch (err) {
-        toast.error('Failed to load room details');
+        toast.error('Failed to load room details', { id: 'room-load-err' });
         setRoomState({ status: 'error', message: 'Could not load room' });
       }
     };
@@ -59,50 +59,72 @@ const BiddingRoom = () => {
     const newSocket = io('http://localhost:5000');
     setSocket(newSocket);
     const vendorId = localStorage.getItem('vendorId');
-    if (!vendorId && !localStorage.getItem('adminToken')) toast.error('You are not logged in!');
+    if (!vendorId && !localStorage.getItem('adminToken')) toast.error('You are not logged in!', { id: 'not-logged-in' });
     
     newSocket.emit('joinRoom', { roomId: id, vendorId: vendorId || 'anonymous' });
 
     newSocket.on('newLowestBid', (data) => {
       setRoomState(prev => {
         const updated = { ...prev, currentLowestBid: data.amount };
-        if (data.itemBids && data.itemBids.length > 0) {
-          updated.itemLowestBids = data.itemBids;
-          const newInputs = {};
-          data.itemBids.forEach(ib => newInputs[ib.itemName] = ib.amount.toString());
-          setItemInputs(newInputs);
-        } else {
-          setItemInputs({ [prev.product?.name || 'Product']: data.amount.toString() });
+        if (data.itemLowestBids && data.itemLowestBids.length > 0) {
+          updated.itemLowestBids = data.itemLowestBids;
         }
         return updated;
       });
+      // Update input fields — MERGE so unchanged items keep their values
+      if (data.itemBids && data.itemBids.length > 0) {
+        const newInputs = {};
+        data.itemBids.forEach(ib => { if (ib.itemName) newInputs[ib.itemName] = ib.amount.toString(); });
+        setItemInputs(prev => ({ ...prev, ...newInputs }));
+      } else if (data.itemLowestBids && data.itemLowestBids.length > 0) {
+        const newInputs = {};
+        data.itemLowestBids.forEach(ib => { if (ib.itemName) newInputs[ib.itemName] = ib.amount.toString(); });
+        setItemInputs(prev => ({ ...prev, ...newInputs }));
+      }
+      toast.success(`New lowest bid: Rs.${data.amount.toLocaleString('en-IN')}`, { id: 'bid-' + data.amount, style: { borderRadius: '10px', background: '#333', color: '#fff' } });
+      // Update bid history panel
       setBidsHistory(prev => {
         const next = { ...prev };
-        if (data.itemBids && data.itemBids.length > 0) {
-          data.itemBids.forEach(ib => {
+        const bidsToRecord = data.itemBids && data.itemBids.length > 0 ? data.itemBids : (data.itemLowestBids || []);
+        if (bidsToRecord.length > 0) {
+          bidsToRecord.forEach(ib => {
+            if (!ib.itemName) return;
             if (!next[ib.itemName]) next[ib.itemName] = [];
             next[ib.itemName] = [{ amount: ib.amount, time: new Date() }, ...next[ib.itemName]].slice(0, 5);
           });
         } else {
-           const name = 'Product';
-           if (!next[name]) next[name] = [];
-           next[name] = [{ amount: data.amount, time: new Date() }, ...next[name]].slice(0, 5);
+          const name = 'Product';
+          if (!next[name]) next[name] = [];
+          next[name] = [{ amount: data.amount, time: new Date() }, ...next[name]].slice(0, 5);
         }
         return next;
       });
-      toast.success(`New lowest bid: Rs.${data.amount.toLocaleString('en-IN')}`, { style: { borderRadius: '10px', background: '#333', color: '#fff' } });
     });
+
+    newSocket.on('newBidHistory', (data) => {
+      if (data.itemBids && data.itemBids.length > 0) {
+        setBidsHistory(prev => {
+          const next = { ...prev };
+          data.itemBids.forEach(ib => {
+            if (!next[ib.itemName]) next[ib.itemName] = [];
+            next[ib.itemName] = [{ amount: ib.amount, time: new Date() }, ...next[ib.itemName]].slice(0, 5);
+          });
+          return next;
+        });
+      }
+    });
+
 
     newSocket.on('auctionStarted', (data) => {
       setRoomState(prev => ({ ...prev, status: 'active', endTime: data.endTime, currentLowestBid: data.currentLowestBid }));
-      toast.success('Auction has started! Place your bids now.', { duration: 4000 });
+      toast.success('Auction has started! Place your bids now.', { duration: 4000, id: 'auction-started' });
     });
     newSocket.on('timeExtended', ({ newEndTime, message, extendedBy }) => {
       setRoomState(prev => ({ ...prev, endTime: newEndTime }));
       setExtensionNotice(extendedBy ? `Auction extended by ${extendedBy} minute${extendedBy > 1 ? 's' : ''}` : 'Auction duration extended');
-      toast(message, { duration: 6000, style: { background: '#f59e0b', color: '#fff', fontWeight: 'bold' } });
+      toast(message, { duration: 6000, id: 'time-extended', style: { background: '#f59e0b', color: '#fff', fontWeight: 'bold' } });
     });
-    newSocket.on('bidError', (data) => toast.error(data.message));
+    newSocket.on('bidError', (data) => toast.error(data.message, { id: 'bid-error' }));
     newSocket.on('broadcastReceived', ({ message }) => setBroadcasts(prev => [...prev, message]));
 
     interval = setInterval(() => {
@@ -191,10 +213,83 @@ const BiddingRoom = () => {
   return (
     <>
       {!hasAcknowledged && (
-        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md text-center">
-            <h2 className="text-xl font-bold mb-4">Acknowledge Rules</h2>
-            <button onClick={() => { sessionStorage.setItem(`ack_${id}`, 'true'); setHasAcknowledged(true); }} className="bg-slate-900 text-white px-6 py-2 rounded-lg">I Agree</button>
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="bg-slate-900 px-6 py-4 text-center shrink-0">
+              <p className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">Reverse Auction Platform</p>
+              <h2 className="text-xl font-black text-white">Bidder Acknowledgement</h2>
+              <p className="text-xs text-slate-400 mt-1">बोलीदाता स्वीकृती &nbsp;|&nbsp; बोलीदाता स्वीकृति</p>
+            </div>
+
+            {/* Scrollable disclaimer body — concise unified set */}
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-0 text-sm">
+
+              {/* Unified box */}
+              <div className="rounded-xl overflow-hidden border border-slate-800">
+
+                {/* Box header — three language names stacked vertically */}
+                <div className="bg-slate-900 px-4 py-3 text-center">
+                  <p className="text-xs font-black uppercase tracking-widest text-amber-400 leading-relaxed">
+                    ⚖️ Administrator's Absolute Authority
+                  </p>
+                  <p className="text-xs font-black uppercase tracking-widest text-amber-300 leading-relaxed mt-0.5">
+                    प्रशासकाचा सर्वोच्च अधिकार
+                  </p>
+                  <p className="text-xs font-black uppercase tracking-widest text-amber-300 leading-relaxed mt-0.5">
+                    प्रशासक का सर्वोच्च अधिकार
+                  </p>
+                </div>
+
+                {/* English */}
+                <div className="px-4 pt-3 pb-3 border-b border-slate-200">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 mb-2 border-b border-blue-100 pb-1">English</p>
+                  <ul className="space-y-1.5 text-slate-700 list-disc list-inside leading-relaxed text-sm">
+                    <li>This is a <strong>legally binding reverse auction.</strong> My bid is a firm supply commitment at the quoted price. All bids are final. <strong>Auto-bidding is permanently disabled.</strong></li>
+                    <li>Anonymity is guaranteed. No vendor identity is disclosed during the auction. Grand Total must be <strong>strictly lower</strong> than the current market price to be accepted.</li>
+                    <li>The <strong>Administrator's decision is final, supreme, and binding</strong> in all matters — disputes, bid validity, timing, vendor eligibility, and blacklisting — without exception or appeal.</li>
+                    <li>The Administrator may end, extend, void, or cancel the auction; disqualify or remove any vendor (including the winner); and blacklist vendors. <strong>Reinstatement is solely at the Administrator's discretion.</strong></li>
+                    <li>Participation constitutes <strong>full and unconditional acceptance</strong> of all the above.</li>
+                  </ul>
+                </div>
+
+                {/* Marathi */}
+                <div className="px-4 pt-3 pb-3 border-b border-slate-200">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-orange-600 mb-2 border-b border-orange-100 pb-1">मराठी</p>
+                  <ul className="space-y-1.5 text-slate-700 list-disc list-inside leading-relaxed text-sm">
+                    <li>हा एक <strong>कायदेशीरदृष्ट्या बंधनकारक रिव्हर्स लिलाव</strong> आहे. बोली म्हणजे पुरवठ्याची ठाम वचनबद्धता. सर्व बोली अंतिम असतात. <strong>ऑटो-बिडिंग कायमस्वरूपी अक्षम आहे.</strong></li>
+                    <li>गुप्तता राखली जाते. एकूण बोली सद्य बाजार किमतीपेक्षा <strong>कमी</strong> असणे आवश्यक आहे.</li>
+                    <li>लिलावाच्या प्रत्येक बाबतीत — वाद, बोली वैधता, कालावधी, विक्रेता पात्रता आणि काळ्या यादीत — <strong>प्रशासकाचा निर्णय अंतिम, सर्वोच्च आणि बंधनकारक</strong> आहे. कोणताही अपवाद नाही.</li>
+                    <li>प्रशासक लिलाव संपवू, वाढवू, रद्द करू शकतो; कोणत्याही विक्रेत्याला — विजेत्यासह — काढून टाकू शकतो; आणि काळ्या यादीत टाकू शकतो. <strong>काळ्या यादीतून काढणे पूर्णपणे प्रशासकाच्या विवेकाधीन आहे.</strong></li>
+                    <li>सहभागी होणे म्हणजे वरील सर्व अटींना <strong>बिनशर्त स्वीकृती</strong> होय.</li>
+                  </ul>
+                </div>
+
+                {/* Hindi */}
+                <div className="px-4 pt-3 pb-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest mb-2 border-b pb-1" style={{ color: 'oklch(0.74 0.3 146.74)', borderColor: 'oklch(0.92 0.1 146.74)' }}>हिन्दी</p>
+                  <ul className="space-y-1.5 text-slate-700 list-disc list-inside leading-relaxed text-sm">
+                    <li>यह एक <strong>कानूनी रूप से बाध्यकारी रिवर्स नीलामी</strong> है। बोली आपूर्ति की दृढ़ प्रतिबद्धता है। सभी बोलियाँ अंतिम हैं। <strong>ऑटो-बिडिंग स्थायी रूप से अक्षम है।</strong></li>
+                    <li>गुमनामी सुनिश्चित है। कुल बोली वर्तमान बाजार मूल्य से <strong>कम</strong> होनी चाहिए।</li>
+                    <li>इस नीलामी के प्रत्येक मामले में — विवाद, बोली वैधता, समय, विक्रेता योग्यता और काली सूची — <strong>प्रशासक का निर्णय अंतिम, सर्वोच्च और बाध्यकारी</strong> है। कोई अपवाद नहीं।</li>
+                    <li>प्रशासक नीलामी समाप्त, विस्तारित या रद्द कर सकता है; किसी भी विक्रेता को — विजेता सहित — हटा सकता है; और काली सूची में डाल सकता है। <strong>काली सूची से बाहर निकालना पूरी तरह प्रशासक के विवेक पर निर्भर है।</strong></li>
+                    <li>भाग लेना उपरोक्त सभी शर्तों की <strong>पूर्ण और बिना शर्त स्वीकृति</strong> मानी जाएगी।</li>
+                  </ul>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 shrink-0">
+              <p className="text-xs text-slate-500 text-center mb-3">By clicking <strong>"I Agree"</strong>, you confirm you have read and accept all the above terms.</p>
+              <button
+                onClick={() => { sessionStorage.setItem(`ack_${id}`, 'true'); setHasAcknowledged(true); }}
+                className="w-full bg-slate-900 hover:bg-slate-700 active:scale-95 text-white font-black text-base py-3.5 rounded-xl transition shadow-lg"
+              >
+                ✓ &nbsp; I Agree &nbsp;/&nbsp; मी सहमत आहे &nbsp;/&nbsp; मैं सहमत हूँ
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -220,19 +315,32 @@ const BiddingRoom = () => {
         </div>
 
         {/* Header Dashboard */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8 flex flex-wrap items-center justify-between gap-6">
-          <div>
-            <h1 className="text-3xl font-black text-slate-900 mb-2">{roomState.product?.name || 'Multi-Item Auction'}</h1>
-            <div className="flex items-center gap-4 text-sm text-slate-500">
-              <span className="flex items-center gap-1"><Lock className="w-4 h-4 text-emerald-500"/> Anonymity Active</span>
-              <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-semibold">{roomState.status.toUpperCase()}</span>
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-6">
+          <div className="flex flex-col items-center sm:flex-row sm:items-center sm:justify-between gap-4">
+            {/* Title + badges — centred on mobile, left on desktop */}
+            <div className="min-w-0 flex-1 text-center sm:text-left">
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mb-2 leading-tight break-words">
+                {roomState.auctionName || (roomState.items && roomState.items.length > 1 ? `Basket of ${roomState.items.length} Items` : (roomState.items?.[0]?.name || roomState.product?.name || 'Multi-Item Auction'))}
+              </h1>
+              <div className="flex items-center justify-center sm:justify-start flex-wrap gap-2 text-sm text-slate-500">
+                <span className="flex items-center gap-1 whitespace-nowrap">
+                  <Lock className="w-4 h-4 text-emerald-500 flex-shrink-0"/> Anonymity Active
+                </span>
+                <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-bold text-xs whitespace-nowrap">
+                  {roomState.status.toUpperCase()}
+                </span>
+              </div>
+            </div>
+            {/* Time Left — always centred on mobile, right on desktop */}
+            <div className="text-center sm:text-right flex-shrink-0 border-t border-slate-100 pt-4 w-full sm:w-auto sm:border-t-0 sm:pt-0">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Time Left</p>
+              <p className={`text-4xl font-black font-mono ${isEndingSoon ? 'text-red-600 animate-pulse' : 'text-slate-800'}`}>
+                {timeLeft || '--:--'}
+              </p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Time Left</p>
-            <p className={`text-4xl font-black font-mono ${isEndingSoon ? 'text-red-600' : 'text-slate-800'}`}>{timeLeft || '--:--'}</p>
-          </div>
         </div>
+
 
         {/* Sticky Nav Bar */}
         <div ref={navRef} className="sticky top-0 z-40 bg-slate-100/90 backdrop-blur-md py-4 border-b border-slate-200 mb-6 flex gap-2 overflow-x-auto hide-scrollbar">

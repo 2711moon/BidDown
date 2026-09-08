@@ -71,23 +71,23 @@ const AdminRoomView = () => {
         socket.on('adminNewBid', (bid) => {
           setBids(prev => [bid, ...prev]);
           setRoom(prev => prev ? { ...prev, currentLowestBid: bid.amount, winner: bid.vendor } : prev);
-          toast.success('New bid: Rs.' + bid.amount.toLocaleString('en-IN') + ' by ' + bid.vendor.companyName);
+          toast.success('New bid: Rs.' + bid.amount.toLocaleString('en-IN') + ' by ' + bid.vendor.companyName, { id: 'admin-bid-' + bid.amount });
         });
 
         socket.on('auctionStarted', (data) => {
           setRoom(prev => prev ? { ...prev, status: 'active', currentLowestBid: data.currentLowestBid, endTime: data.endTime } : prev);
-          toast.success('Auction has started!', { duration: 4000 });
+          toast.success('Auction has started!', { duration: 4000, id: 'admin-auction-started' });
         });
 
         socket.on('timeExtended', ({ newEndTime, message, extendedBy }) => {
           setEndTime(new Date(newEndTime));
           setRoom(prev => prev ? { ...prev, endTime: newEndTime } : prev);
-          toast(message, { duration: 5000, style: { background: '#f59e0b', color: '#fff', fontWeight: 'bold' } });
+          toast(message, { duration: 5000, id: 'admin-time-extended', style: { background: '#f59e0b', color: '#fff', fontWeight: 'bold' } });
         });
 
         socket.on('auctionEnded', ({ message }) => {
           setRoom(prev => prev ? { ...prev, status: 'completed' } : prev);
-          toast.success(message || 'Auction ended.');
+          toast.success(message || 'Auction ended.', { id: 'admin-auction-ended' });
         });
         
         socket.on('participantUpdate', ({ count, presentVendors }) => {
@@ -322,7 +322,7 @@ const AdminRoomView = () => {
           <div className="w-px h-5 bg-slate-200" />
           <div>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Admin View</p>
-            <h1 className="text-lg font-black text-slate-900 leading-tight">{room.product?.name || 'Unknown Product'}</h1>
+            <h1 className="text-lg font-black text-slate-900 leading-tight">{room.auctionName || (room.items && room.items.length > 1 ? `Basket of ${room.items.length} Items` : (room.items?.[0]?.name || room.product?.name || 'Unknown Product'))}</h1>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 justify-end mt-4 md:mt-0">

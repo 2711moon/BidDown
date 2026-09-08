@@ -27,8 +27,20 @@ const AdminDashboard = () => {
   const [passwordData, setPasswordData] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [showPwd, setShowPwd] = useState({ old: false, new: false, confirm: false });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [auctionName, setAuctionName] = useState("");
   const [auctionItems, setAuctionItems] = useState([defaultItem()]);
   const [auctionSchedule, setAuctionSchedule] = useState({ startTime: "", endTime: "", selectedVendors: [] });
+  const [itemErrors, setItemErrors] = useState({});
+  const itemRefs = React.useRef({});
+  const setItemError = (idx, msg) => {
+    setItemErrors(prev => ({ ...prev, [idx]: msg }));
+    // scroll to the offending card
+    setTimeout(() => {
+      const el = itemRefs.current[idx];
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.focus && el.focus(); }
+    }, 100);
+  };
+  const clearItemError = (idx) => setItemErrors(prev => { const n={...prev}; delete n[idx]; return n; });
 
   const addItem = () => setAuctionItems(prev => [...prev, defaultItem()]);
   const removeItem = (idx) => setAuctionItems(prev => prev.filter((_, i) => i !== idx));
@@ -91,6 +103,7 @@ const AdminDashboard = () => {
     if (new Date(auctionSchedule.endTime) <= new Date()) { toast.error("Auction end time must be in the future."); setIsSubmitting(false); return; }
     try {
       const formData = new FormData();
+      formData.append("auctionName", auctionName);
       formData.append("items", JSON.stringify(auctionItems.map(it => ({ name: it.name, basePrice: Number(it.basePrice), quantity: Number(it.quantity), decrementValue: Number(it.decrementValue) }))));
       formData.append("startTime", auctionSchedule.startTime);
       formData.append("endTime", auctionSchedule.endTime);
@@ -101,7 +114,7 @@ const AdminDashboard = () => {
       });
       await axios.post(`${API}/api/admin/rooms`, formData, { headers: { "Content-Type": "multipart/form-data" } });
       toast.success("Auction created! Invitation emails sent to vendors.");
-      setActiveTab("rooms"); setAuctionItems([defaultItem()]); setAuctionSchedule({ startTime: "", endTime: "", selectedVendors: [] }); fetchData();
+      setActiveTab("rooms"); setAuctionName(""); setAuctionItems([defaultItem()]); setAuctionSchedule({ startTime: "", endTime: "", selectedVendors: [] }); fetchData();
     } catch (err) { toast.error(err.response?.data?.message || err.message || "Error creating auction"); }
     finally { setIsSubmitting(false); }
   };
@@ -297,11 +310,18 @@ const AdminDashboard = () => {
                     <button type="button" onClick={addItem} className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-blue-700 transition"><Plus className="w-4 h-4" /> Add Item</button>
                   </div>
                   {auctionItems.map((item, idx) => (
-                    <div key={idx} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    <div key={idx} ref={el => itemRefs.current[idx] = el} className={"bg-white border rounded-xl shadow-sm overflow-hidden transition-all " + (itemErrors[idx] ? "border-red-400 shadow-red-200 shadow-lg ring-2 ring-red-300" : "border-slate-200")}>
                       <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100">
                         <span className="font-bold text-slate-700 text-sm">Item {idx+1}{item.name ? ` — ${item.name}` : ""}</span>
                         {auctionItems.length > 1 && <button type="button" onClick={()=>removeItem(idx)} className="flex items-center gap-1 text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded hover:bg-red-50 transition"><Trash2 className="w-3.5 h-3.5" /> Remove</button>}
                       </div>
+                      {itemErrors[idx] && (
+                        <div className="flex items-center gap-2 bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-red-700 font-bold">
+                          <svg className="w-4 h-4 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                          {itemErrors[idx]}
+                          <button type="button" onClick={()=>setItemErrors(prev=>{const n={...prev};delete n[idx];return n;})} className="ml-auto text-red-400 hover:text-red-700 font-black">×</button>
+                        </div>
+                      )}
                       <div className="p-4 space-y-3">
                         <div>
                           <label className="block text-xs font-bold text-slate-600 mb-1">Item Name *</label>
@@ -316,10 +336,10 @@ const AdminDashboard = () => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-bold text-slate-600 mb-1">Item Image (optional)</label>
-                            <input type="file" accept="image/*" onChange={e=>{const file=e.target.files[0];if(file&&file.size>50*1024*1024){toast.error("Image too large. Max 50 MB.");e.target.value="";return;}updateItem(idx,"image",file);}} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs cursor-pointer" />
+                            <input type="file" accept="image/*" onChange={e=>{const file=e.target.files[0];if(file&&file.size>50*1024*1024){setItemErrors(prev=>({...prev,[idx]:`Image "${file.name}" is too large (${(file.size/1024/1024).toFixed(1)} MB). Max allowed: 50 MB.`}));e.target.value="";setTimeout(()=>{if(itemRefs.current[idx]){itemRefs.current[idx].scrollIntoView({behavior:"smooth",block:"center"});}},100);return;}setItemErrors(prev=>{const n={...prev};delete n[idx];return n;});updateItem(idx,"image",file);}} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs cursor-pointer" />
                             {item.image && <div className="mt-2 relative"><img src={URL.createObjectURL(item.image)} alt="preview" className="w-full h-24 object-cover rounded-lg border border-slate-200" /><button type="button" onClick={()=>updateItem(idx,"image",null)} className="absolute top-1 right-1 bg-white border text-slate-600 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-red-50 hover:text-red-600">x</button></div>}
                           </div>
-                          <div><label className="block text-xs font-bold text-slate-600 mb-1">Documents (PDF, Excel, Word)</label><input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={e=>updateItem(idx,"documents",Array.from(e.target.files))} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs cursor-pointer" /></div>
+                          <div><label className="block text-xs font-bold text-slate-600 mb-1">Documents (PDF, Excel, Word)</label><input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={e=>{const files=Array.from(e.target.files);const big=files.find(file=>file.size>50*1024*1024);if(big){setItemError(idx,"Document \""+big.name+"\" is too large ("+Math.round(big.size/1024/1024)+" MB). Max 50 MB per file.");e.target.value="";return;}clearItemError(idx);updateItem(idx,"documents",files);}} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs cursor-pointer" /></div>
                         </div>
                       </div>
                     </div>
@@ -343,6 +363,7 @@ const AdminDashboard = () => {
                         <div className="ml-3 flex-1">
                           <span className="flex items-center gap-2 text-sm font-bold text-slate-900">{v.companyName}{v.blacklisted&&<span className="text-[9px] font-black uppercase bg-red-100 text-red-700 px-1.5 py-0.5 rounded border border-red-200">Blacklisted</span>}</span>
                           <span className="block text-xs text-slate-400">{v.email}</span>
+                          {v.blacklisted && <button type="button" onClick={async(e)=>{e.stopPropagation();if(window.confirm("Unblacklist "+v.companyName+"? They will be available for auctions again.")){try{const res=await axios.put(`${API}/api/admin/vendors/${v._id}/blacklist`);toast.success(res.data.message);fetchData();}catch{toast.error("Failed to unblacklist vendor");}}}} className="mt-1 text-[10px] font-black bg-green-100 text-green-700 hover:bg-green-200 border border-green-200 px-2 py-0.5 rounded transition">↩ Unblacklist</button>}
                         </div>
                       </div>
                     ))}
