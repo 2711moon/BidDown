@@ -4,7 +4,7 @@ import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { Users, LayoutDashboard, FileBarChart, Plus, CheckCircle, Monitor, Activity, LogOut, Package, Lock, Eye, EyeOff, Gavel, Trash2 } from "lucide-react";
 
-const API = "http://localhost:5000";
+const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000');
 const defaultItem = () => ({ name: "", basePrice: "", quantity: 1, decrementValue: "", image: null, documents: [] });
 
 const AdminDashboard = () => {
@@ -304,6 +304,12 @@ const AdminDashboard = () => {
                 <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3"><Plus className="w-6 h-6 text-blue-600" /> Create Auction</h2>
               </div>
               <form onSubmit={handleCreateAuction} className="space-y-5">
+                {/* Auction Name Input */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                  <label className="block text-sm font-bold text-slate-700 mb-1.5 flex items-center gap-2"><Package className="w-4 h-4 text-blue-500" /> Auction Name / Title</label>
+                  <input type="text" required value={auctionName} onChange={(e) => setAuctionName(e.target.value)} placeholder="e.g., Diwali Supplies 2026" className="w-full border border-slate-300 px-3 py-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                </div>
+
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-bold text-slate-900 flex items-center gap-2"><Package className="w-4 h-4 text-blue-500" /> Auction Items</h4>

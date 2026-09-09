@@ -3,10 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import {
+import { MessageSquare, 
   ChevronLeft, Activity, Clock, TrendingDown, Users, Package,
   AlertCircle, CheckCircle, Download, StopCircle, Crown, RefreshCw, Timer, X
-} from 'lucide-react';
+ , Menu} from 'lucide-react';
 
 const AdminRoomView = () => {
   const { id } = useParams();
@@ -17,6 +17,7 @@ const AdminRoomView = () => {
   const [isEndingSoon, setIsEndingSoon] = useState(false);
   const [loading, setLoading] = useState(true);
   const [ending, setEnding] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [endTime, setEndTime] = useState(null);
   const [extendMinutes, setExtendMinutes] = useState('5');
   const [extendLoading, setExtendLoading] = useState(false);
@@ -41,7 +42,7 @@ const AdminRoomView = () => {
         const token = localStorage.getItem('adminToken');
         if (!token) { navigate('/admin/login'); return; }
 
-        const res = await axios.get(`http://localhost:5000/api/admin/rooms/${id}`, {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/admin/rooms/${id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (!isActive) return;
@@ -52,7 +53,7 @@ const AdminRoomView = () => {
         setLoading(false);
 
         // Connect socket as admin observer
-        const socket = io('http://localhost:5000');
+        const socket = io((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '');
         if (!isActive) { socket.disconnect(); return; }
         
         socketRef.current = socket;
@@ -88,6 +89,10 @@ const AdminRoomView = () => {
         socket.on('auctionEnded', ({ message }) => {
           setRoom(prev => prev ? { ...prev, status: 'completed' } : prev);
           toast.success(message || 'Auction ended.', { id: 'admin-auction-ended' });
+        });
+        
+        socket.on('syncBroadcasts', ({ broadcasts }) => {
+          setRoom(prev => prev ? { ...prev, broadcasts } : prev);
         });
         
         socket.on('participantUpdate', ({ count, presentVendors }) => {
@@ -135,7 +140,7 @@ const AdminRoomView = () => {
     setEnding(true);
     try {
       const token = localStorage.getItem('adminToken');
-      await axios.post('http://localhost:5000/api/admin/rooms/' + id + '/end', {}, {
+      await axios.post((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/rooms/' + id + '/end', {}, {
         headers: { Authorization: 'Bearer ' + token }
       });
       if (socketRef.current) socketRef.current.emit('adminEndAuction', { roomId: id });
@@ -154,6 +159,12 @@ const AdminRoomView = () => {
     // Local toast removed because the socket 'timeExtended' event will toast globally
   };
 
+  const handleRemoveBroadcast = (broadcastId) => {
+    if (!window.confirm('Remove this broadcast message?')) return;
+    if (!socketRef.current) return;
+    socketRef.current.emit('adminRemoveBroadcast', { roomId: id, broadcastId });
+  };
+
   const handleBroadcast = () => {
     if (!broadcastMsg.trim()) return;
     if (!socketRef.current) return;
@@ -165,7 +176,7 @@ const AdminRoomView = () => {
   const openReopenModal = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const res = await axios.get('http://localhost:5000/api/admin/vendors', {
+      const res = await axios.get((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/vendors', {
         headers: { Authorization: 'Bearer ' + token }
       });
       setAllVendors(res.data);
@@ -183,13 +194,13 @@ const AdminRoomView = () => {
       const existingIds = (room.invitedVendors || []).map(v => (v._id || v).toString());
       const retainedVendorIds = reopenVendors.filter(vid => existingIds.includes(vid.toString()));
       const newVendorIds = reopenVendors.filter(vid => !existingIds.includes(vid.toString()));
-      await axios.post('http://localhost:5000/api/admin/rooms/' + id + '/reopen',
+      await axios.post((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/rooms/' + id + '/reopen',
         { durationMinutes: Number(reopenDuration), retainedVendorIds, newVendorIds },
         { headers: { Authorization: 'Bearer ' + token } }
       );
       toast.success('Auction re-opened! Emails sent to all vendors.');
       setShowReopenModal(false);
-      const res2 = await axios.get('http://localhost:5000/api/admin/rooms/' + id, {
+      const res2 = await axios.get((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/rooms/' + id, {
         headers: { Authorization: 'Bearer ' + token }
       });
       setRoom(res2.data.room);
@@ -313,78 +324,165 @@ const AdminRoomView = () => {
     <>
     <div className="min-h-screen bg-slate-100">
 
-      {/* Top Bar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-20">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/admin')} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-900 font-semibold text-sm transition">
-            <ChevronLeft className="w-4 h-4" /> Back
-          </button>
-          <div className="w-px h-5 bg-slate-200" />
-          <div>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Admin View</p>
-            <h1 className="text-lg font-black text-slate-900 leading-tight">{room.auctionName || (room.items && room.items.length > 1 ? `Basket of ${room.items.length} Items` : (room.items?.[0]?.name || room.product?.name || 'Unknown Product'))}</h1>
+                  {/* Top Bar - Responsive */}
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+        
+        {/* Desktop View (lg and up) */}
+        <div className="hidden lg:flex px-6 py-4 items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate('/admin')} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-900 font-semibold text-sm transition bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-lg">
+              <ChevronLeft className="w-4 h-4" /> Back
+            </button>
+            <div className="w-px h-8 bg-slate-200" />
+            <div>
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-0.5">Admin View</p>
+              <h1 className="text-xl font-black text-slate-900 leading-tight">{room.auctionName || (room.items && room.items.length > 1 ? `Basket of ${room.items.length} Items` : (room.items?.[0]?.name || room.product?.name || 'Unknown Product'))}</h1>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {isLive && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-ping" /> LIVE
+                </span>
+                <span className="flex items-center gap-1 text-slate-500 text-xs font-bold bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-full">
+                  <Users className="w-3.5 h-3.5" /> {participantCount} online
+                </span>
+              </div>
+            )}
+            {isDone && (
+              <span className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-500 text-xs font-bold px-3 py-1.5 rounded-full">
+                <CheckCircle className="w-3.5 h-3.5" /> COMPLETED
+              </span>
+            )}
+            
+            <div className="w-px h-6 bg-slate-200 mx-1" />
+            
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+              <span className="text-[10px] font-bold text-slate-400 uppercase px-2">Export</span>
+              <button onClick={exportCSV} className="text-xs font-bold text-slate-600 hover:text-blue-700 bg-white hover:bg-blue-50 px-3 py-1.5 rounded shadow-sm transition">CSV</button>
+              <button onClick={exportExcel} className="text-xs font-bold text-slate-600 hover:text-emerald-700 bg-white hover:bg-emerald-50 px-3 py-1.5 rounded shadow-sm transition">Excel</button>
+              <button onClick={exportPDF} className="text-xs font-bold text-slate-600 hover:text-red-700 bg-white hover:bg-red-50 px-3 py-1.5 rounded shadow-sm transition">PDF</button>
+            </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3 justify-end mt-4 md:mt-0">
-          {isLive && (
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-xs font-bold px-3 py-1.5 rounded-full">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-ping" /> LIVE
-              </span>
-              <span className="flex items-center gap-1 text-slate-500 text-xs font-bold bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-full">
-                <Users className="w-3.5 h-3.5" /> {participantCount} online
-              </span>
-            </div>
-          )}
-          {isDone && (
-            <span className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-500 text-xs font-bold px-3 py-1.5 rounded-full">
-              <CheckCircle className="w-3.5 h-3.5" /> COMPLETED
-            </span>
-          )}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-            <span className="text-[10px] font-bold text-slate-400 uppercase px-2 hidden sm:inline">Export</span>
-            <button onClick={exportCSV} className="text-xs font-bold text-slate-600 hover:text-blue-700 bg-white hover:bg-blue-50 px-2 sm:px-3 py-1.5 rounded transition shadow-sm">CSV</button>
-            <button onClick={exportExcel} className="text-xs font-bold text-slate-600 hover:text-emerald-700 bg-white hover:bg-emerald-50 px-2 sm:px-3 py-1.5 rounded transition shadow-sm">Excel</button>
-            <button onClick={exportPDF} className="text-xs font-bold text-slate-600 hover:text-red-700 bg-white hover:bg-red-50 px-2 sm:px-3 py-1.5 rounded transition shadow-sm">PDF</button>
-          </div>
-          {isLive && (
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Broadcast */}
-              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg">
-                <input type="text" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)} placeholder="Broadcast message..." className="text-xs bg-transparent outline-none w-24 sm:w-36 text-blue-900 placeholder-blue-300" onKeyDown={e => e.key === 'Enter' && handleBroadcast()} />
-                <button onClick={handleBroadcast} className="text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded transition">Send</button>
-              </div>
 
-              {/* Extend */}
-              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
-                <Timer className="w-3.5 h-3.5 text-amber-600" />
-                <span className="text-xs font-bold text-amber-700">Extend:</span>
-                <select
-                  value={extendMinutes}
-                  onChange={e => setExtendMinutes(e.target.value)}
-                  className="text-xs font-bold text-amber-700 bg-transparent outline-none cursor-pointer"
-                >
-                  {[5,10,15,20,30,45,60].map(m => <option key={m} value={m}>{m} min</option>)}
-                </select>
-                <button onClick={handleExtend} disabled={extendLoading}
-                  className="text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-2 py-1 rounded transition disabled:opacity-60">
-                  + Add
-                </button>
+        {/* Desktop Lower Tools Bar (lg and up) */}
+        <div className="hidden lg:flex px-6 py-3 bg-slate-50 border-t border-slate-100 items-center justify-between">
+          <div className="flex-1 max-w-xl">
+            {isLive && (
+              <div className="flex items-center gap-1.5 bg-white border border-slate-200 p-1 rounded-lg w-full shadow-sm">
+                <input type="text" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)} placeholder="Broadcast message to all vendors..." className="text-sm bg-transparent outline-none flex-1 px-3 py-1 text-slate-800 placeholder-slate-400" onKeyDown={e => e.key === 'Enter' && handleBroadcast()} />
+                <button onClick={handleBroadcast} className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-5 py-1.5 rounded transition shadow-sm">Send</button>
               </div>
-              
-              <button onClick={handleEndAuction} disabled={ending}
-                className="flex items-center gap-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition disabled:opacity-60">
-                <StopCircle className="w-3.5 h-3.5" /> {ending ? 'Ending...' : 'End Auction'}
+            )}
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {isLive && (
+              <>
+                <div className="flex items-center gap-2 bg-white border border-amber-200 p-1 rounded-lg shadow-sm">
+                  <div className="flex items-center gap-1.5 px-2">
+                    <Timer className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-bold text-amber-700">Extend:</span>
+                  </div>
+                  <select value={extendMinutes} onChange={e => setExtendMinutes(e.target.value)} className="text-sm font-bold text-amber-700 bg-amber-50 outline-none cursor-pointer py-1 px-2 rounded border border-amber-100">
+                    {[5,10,15,20,30,45,60].map(m => <option key={m} value={m}>{m} min</option>)}
+                  </select>
+                  <button onClick={handleExtend} disabled={extendLoading} className="text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-4 py-1.5 rounded transition disabled:opacity-60 ml-1">+ Add</button>
+                </div>
+                <button onClick={handleEndAuction} disabled={ending} className="flex items-center gap-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 px-5 py-2 rounded-lg transition shadow-sm disabled:opacity-60">
+                  <StopCircle className="w-4 h-4" /> {ending ? 'Ending...' : 'End Auction'}
+                </button>
+              </>
+            )}
+            {isDone && (
+              <button onClick={openReopenModal} className="flex items-center gap-2 text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 px-6 py-2 rounded-lg transition shadow-sm">
+                <RefreshCw className="w-4 h-4" /> Re-open Auction
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile View (Below lg) */}
+        <div className="lg:hidden flex flex-col">
+          <div className="px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button onClick={() => navigate('/admin')} className="p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <div>
+                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none mb-1">Admin View</p>
+                <h1 className="text-base font-black text-slate-900 leading-none truncate max-w-[180px] sm:max-w-xs">{room.auctionName || (room.items && room.items.length > 1 ? `Basket of ${room.items.length} Items` : (room.items?.[0]?.name || room.product?.name || 'Unknown Product'))}</h1>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {isLive && (
+                <span className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold px-2 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping" /> LIVE
+                </span>
+              )}
+              <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 transition">
+                {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
             </div>
-          )}
-          {isDone && (
-            <button onClick={openReopenModal}
-              className="flex items-center gap-2 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 px-3 py-1.5 rounded-lg transition">
-              <RefreshCw className="w-3.5 h-3.5" /> Re-open Auction
-            </button>
+          </div>
+
+          {/* Collapsible Mobile Menu */}
+          {isMobileMenuOpen && (
+            <div className="px-4 pb-4 pt-2 bg-slate-50 border-t border-slate-200 flex flex-col gap-4 animate-in slide-in-from-top-2">
+              
+              <div className="flex items-center justify-between">
+                {isLive ? (
+                  <span className="flex items-center gap-1 text-slate-500 text-xs font-bold bg-white border border-slate-200 px-3 py-1.5 rounded-full shadow-sm">
+                    <Users className="w-3.5 h-3.5" /> {participantCount} online
+                  </span>
+                ) : isDone ? (
+                  <span className="flex items-center gap-1 bg-slate-200 text-slate-600 text-xs font-bold px-3 py-1.5 rounded-full">
+                    <CheckCircle className="w-3.5 h-3.5" /> COMPLETED
+                  </span>
+                ) : <span/>}
+                
+                <div className="flex items-center gap-1 bg-white border border-slate-200 p-1 rounded-lg shadow-sm">
+                  <button onClick={exportCSV} className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">CSV</button>
+                  <button onClick={exportExcel} className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">Excel</button>
+                  <button onClick={exportPDF} className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">PDF</button>
+                </div>
+              </div>
+
+              {isLive && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-1.5 bg-white border border-blue-200 p-1 rounded-lg w-full shadow-sm">
+                    <input type="text" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)} placeholder="Broadcast..." className="text-sm bg-transparent outline-none flex-1 px-2 text-blue-900" onKeyDown={e => e.key === 'Enter' && handleBroadcast()} />
+                    <button onClick={handleBroadcast} className="text-xs font-bold text-white bg-blue-600 px-4 py-2 rounded shadow-sm">Send</button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between bg-white border border-amber-200 p-1 rounded-lg flex-1 shadow-sm">
+                      <select value={extendMinutes} onChange={e => setExtendMinutes(e.target.value)} className="text-xs font-bold text-amber-700 bg-transparent outline-none pl-2">
+                        {[5,10,15,20,30,45,60].map(m => <option key={m} value={m}>{m} min</option>)}
+                      </select>
+                      <button onClick={handleExtend} disabled={extendLoading} className="text-xs font-bold text-white bg-amber-500 px-3 py-1.5 rounded">+ Add</button>
+                    </div>
+                    
+                    <button onClick={handleEndAuction} disabled={ending} className="flex-1 flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-red-600 py-2.5 rounded-lg shadow-sm">
+                      <StopCircle className="w-3.5 h-3.5" /> End
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {isDone && (
+                <button onClick={openReopenModal} className="w-full flex items-center justify-center gap-2 text-sm font-bold text-white bg-violet-600 py-3 rounded-lg shadow-sm">
+                  <RefreshCw className="w-4 h-4" /> Re-open Auction
+                </button>
+              )}
+            </div>
           )}
         </div>
+
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -402,6 +500,29 @@ const AdminRoomView = () => {
             <p className="text-xs opacity-50 mt-2">Ends: {fmt(room.endTime)}</p>
           </div>
 
+          
+          {/* Broadcast History */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2"><MessageSquare className="w-4 h-4 text-blue-500" /><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Broadcast History</span></div>
+              <span className="text-xs font-bold text-slate-400">{room.broadcasts?.length || 0} msgs</span>
+            </div>
+            {room.broadcasts && room.broadcasts.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {room.broadcasts.slice().reverse().map(b => (
+                  <div key={b._id} className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-2 group">
+                    <p className="text-sm text-slate-800 break-words">{b.message}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-[10px] font-bold text-slate-400">{fmt(b.createdAt)}</p>
+                      <button onClick={() => handleRemoveBroadcast(b._id)} className="text-[10px] font-bold text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition px-2 py-0.5 bg-red-50 rounded">Remove</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 text-center italic py-4">No broadcasts sent yet.</p>
+            )}
+          </div>
           {/* Current winner / lowest bid */}
           <div className="bg-white border border-slate-200 rounded-xl p-5">
             <div className="flex items-center gap-2 mb-4">

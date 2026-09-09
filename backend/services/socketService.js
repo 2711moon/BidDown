@@ -105,8 +105,10 @@ module.exports = function(io) {
           socket.emit('adminRoomState', {
             room: {
               _id: room._id,
+              auctionName: room.auctionName,
               product: room.product,
               items: room.items || [],
+              broadcasts: room.broadcasts || [],
               grandTotalContractValue: room.grandTotalContractValue || (room.basePrice * (room.quantity || 1)),
               basePrice: room.basePrice,
               decrementValue: room.decrementValue,
@@ -372,10 +374,22 @@ module.exports = function(io) {
         if (room) {
           room.broadcasts.push({ message });
           await room.save();
+          io.to(roomId).emit('syncBroadcasts', { broadcasts: room.broadcasts });
         }
       } catch (err) { console.error('adminBroadcast save error:', err); }
-      io.to(roomId).emit('broadcastReceived', { message });
       console.log(`Admin broadcasted to room ${roomId}: ${message}`);
+    });
+
+    socket.on('adminRemoveBroadcast', async ({ roomId, broadcastId }) => {
+      try {
+        const room = await BidRoom.findById(roomId);
+        if (room) {
+          room.broadcasts = room.broadcasts.filter(b => b._id.toString() !== broadcastId.toString());
+          await room.save();
+          io.to(roomId).emit('syncBroadcasts', { broadcasts: room.broadcasts });
+          console.log(`Admin removed broadcast ${broadcastId} from room ${roomId}`);
+        }
+      } catch (err) { console.error('adminRemoveBroadcast error:', err); }
     });
 
     // ── Admin: Manual End Auction ──────────────────────────────────────────

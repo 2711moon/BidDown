@@ -16,7 +16,7 @@ const CreateRoom = () => {
   useEffect(() => {
     const fetchVendors = async () => {
       try {
-        const res = await axios.get('http://localhost:5000/api/admin/vendors');
+        const res = await axios.get((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/vendors');
         setVendors(res.data.filter(v => v.status === 'approved'));
       } catch (err) {
         toast.error('Failed to load vendors');
@@ -41,13 +41,13 @@ const CreateRoom = () => {
     setLoading(true);
     const loadingToast = toast.loading('Scheduling auction room...');
     try {
-      const productRes = await axios.post('http://localhost:5000/api/admin/products', {
+      const productRes = await axios.post((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/products', {
         name: formData.productName, 
         description: formData.description, 
         documentUrl: formData.documentUrl,
         billingParameters: { paymentTerms: 'Net 30' }
       });
-      await axios.post('http://localhost:5000/api/admin/rooms', {
+      await axios.post((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api/admin/rooms', {
         product: productRes.data._id,
         basePrice: Number(formData.basePrice), decrementValue: Number(formData.decrementValue),
         quantity: Number(formData.quantity), startTime: new Date(formData.startTime), endTime: new Date(formData.endTime),

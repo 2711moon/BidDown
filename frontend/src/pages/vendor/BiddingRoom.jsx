@@ -26,7 +26,7 @@ const BiddingRoom = () => {
     let interval;
     const fetchRoom = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/vendor/rooms/${id}`);
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vendor/rooms/${id}`);
         const room = res.data;
         const now = new Date();
         const start = new Date(room.startTime);
@@ -44,7 +44,7 @@ const BiddingRoom = () => {
         }
         setItemInputs(initialInputs);
 
-        if (room.broadcasts?.length > 0) setBroadcasts(room.broadcasts.map(b => b.message));
+        setBroadcasts(room.broadcasts || []);
         if (room.extensions?.length > 0) {
           const latestExt = room.extensions[room.extensions.length - 1];
           setExtensionNotice(`Auction extended by ${latestExt.minutes} minute${latestExt.minutes > 1 ? 's' : ''}`);
@@ -56,7 +56,7 @@ const BiddingRoom = () => {
     };
     fetchRoom();
 
-    const newSocket = io('http://localhost:5000');
+    const newSocket = io((import.meta.env.VITE_API_URL || 'http://localhost:5000') + '');
     setSocket(newSocket);
     const vendorId = localStorage.getItem('vendorId');
     if (!vendorId && !localStorage.getItem('adminToken')) toast.error('You are not logged in!', { id: 'not-logged-in' });
@@ -125,7 +125,8 @@ const BiddingRoom = () => {
       toast(message, { duration: 6000, id: 'time-extended', style: { background: '#f59e0b', color: '#fff', fontWeight: 'bold' } });
     });
     newSocket.on('bidError', (data) => toast.error(data.message, { id: 'bid-error' }));
-    newSocket.on('broadcastReceived', ({ message }) => setBroadcasts(prev => [...prev, message]));
+    newSocket.on('broadcastReceived', ({ message }) => setBroadcasts(prev => [...prev, { message }]));
+    newSocket.on('syncBroadcasts', ({ broadcasts }) => setBroadcasts(broadcasts));
 
     interval = setInterval(() => {
       setRoomState(prev => {
@@ -297,7 +298,7 @@ const BiddingRoom = () => {
       {broadcasts.length > 0 && (
         <div className="bg-red-100 border-y-4 border-red-600 py-2 z-50">
           <marquee className="text-red-600 font-black text-2xl uppercase tracking-widest animate-pulse" scrollamount="10">
-            {broadcasts.map((msg, idx) => <span key={idx} className="mx-8">⚠️ {msg}</span>)}
+            {broadcasts.map((b, idx) => <span key={idx} className="mx-8">⚠️ {b.message}</span>)}
           </marquee>
         </div>
       )}

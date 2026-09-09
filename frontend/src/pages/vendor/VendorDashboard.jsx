@@ -18,7 +18,7 @@ const VendorDashboard = () => {
       }
       
       try {
-        const res = await axios.get(`http://localhost:5000/api/vendor/dashboard?vendorId=${vendorId}`);
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vendor/dashboard?vendorId=${vendorId}`);
         setRooms(res.data);
       } catch (err) {
         toast.error('Failed to load your dashboard');
